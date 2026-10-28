@@ -1,4 +1,4 @@
-"""Sidebar UI for tags, the tag library and the cost summary."""
+"""Sidebar UI: the tag registry, applying tags to objects, and the cost summary."""
 
 from __future__ import annotations
 
@@ -16,29 +16,26 @@ PANEL_CATEGORY = "FlexiBIM"
 # Lists
 # ---------------------------------------------------------------------------
 
-class FLEXIBIM_UL_tags(bpy.types.UIList):
-    """Tags on the active object."""
+class FLEXIBIM_UL_applied(bpy.types.UIList):
+    """Tags applied to the active object."""
 
     def draw_item(self, context, layout, data, item, icon, active_data,
                   active_propname, index=0, flt_flag=0):
         if self.layout_type in {"DEFAULT", "COMPACT"}:
             row = layout.row(align=True)
+            resolved = api.resolve_tag(context.scene, item)
             row.prop(item, "name", text="", emboss=False,
-                     icon=C.category_icon(item.category))
-            resolved = api.resolve_tag(item, context.scene)
-            if resolved.missing_library_entry:
+                     icon=C.category_icon(resolved.category))
+            if resolved.missing:
                 row.label(text="", icon="ERROR")
-            elif item.source == C.SOURCE_LIBRARY:
-                row.label(text="", icon="LINKED")
-            sub = row.row(align=True)
-            sub.alignment = "RIGHT"
-            sub.label(text=_cost_label(context, item))
         else:
-            layout.label(text="", icon=C.category_icon(item.category))
+            layout.label(
+                text="", icon=C.category_icon(api.resolve_tag(context.scene, item).category)
+            )
 
 
-class FLEXIBIM_UL_library(bpy.types.UIList):
-    """Reusable tag definitions."""
+class FLEXIBIM_UL_tags(bpy.types.UIList):
+    """The project tag registry."""
 
     def draw_item(self, context, layout, data, item, icon, active_data,
                   active_propname, index=0, flt_flag=0):
@@ -74,19 +71,8 @@ class FLEXIBIM_UL_properties(bpy.types.UIList):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _cost_label(context, tag):
-    """Short right-aligned cost string for list rows."""
-    obj = getattr(context, "object", None)
-    scene = context.scene
-    ctx = api.unit_context(scene)
-    result = api.tag_cost(obj, tag, scene, context)
-    if not result.priced:
-        return ""
-    return units.format_currency(result.amount, ctx)
-
-
 def _draw_cost(layout, cost, ctx, *, measurements=None, show_quantity=True):
-    """Cost editor shared by object tags and library tags."""
+    """Cost editor for a tag definition."""
     column = layout.column(align=True)
     column.prop(cost, "mode", text="")
 
@@ -119,8 +105,8 @@ def _draw_cost(layout, cost, ctx, *, measurements=None, show_quantity=True):
             box.label(text="No geometry to measure", icon="INFO")
 
 
-def _draw_properties(layout, tag, owner):
-    """Key/value property editor for ``tag``."""
+def _draw_properties(layout, tag):
+    """Key/value property editor for the active registry tag."""
     header = layout.row(align=True)
     header.label(text="Custom Properties", icon="PROPERTIES")
 
@@ -132,14 +118,12 @@ def _draw_properties(layout, tag, owner):
         rows=max(2, min(len(tag.properties), 6)),
     )
     side = row.column(align=True)
-    side.operator("flexibim.property_add", icon="ADD", text="").owner_type = owner
-    side.operator("flexibim.property_remove", icon="REMOVE", text="").owner_type = owner
+    side.operator("flexibim.property_add", icon="ADD", text="")
+    side.operator("flexibim.property_remove", icon="REMOVE", text="")
     if len(tag.properties) > 1:
         side.separator()
-        up = side.operator("flexibim.property_move", icon="TRIA_UP", text="")
-        up.owner_type, up.direction = owner, "UP"
-        down = side.operator("flexibim.property_move", icon="TRIA_DOWN", text="")
-        down.owner_type, down.direction = owner, "DOWN"
+        side.operator("flexibim.property_move", icon="TRIA_UP", text="").direction = "UP"
+        side.operator("flexibim.property_move", icon="TRIA_DOWN", text="").direction = "DOWN"
 
 
 def _active_object(context):
@@ -157,9 +141,9 @@ class _Sidebar:
     bl_category = PANEL_CATEGORY
 
 
-class FLEXIBIM_PT_tags(_Sidebar, bpy.types.Panel):
-    bl_label = "Tags"
-    bl_idname = "FLEXIBIM_PT_tags"
+class FLEXIBIM_PT_apply(_Sidebar, bpy.types.Panel):
+    bl_label = "Object Tags"
+    bl_idname = "FLEXIBIM_PT_apply"
     bl_parent_id = "FLEXIBIM_PT_main"
 
     def draw(self, context):
@@ -174,91 +158,23 @@ class FLEXIBIM_PT_tags(_Sidebar, bpy.types.Panel):
 
         row = layout.row()
         row.template_list(
-            "FLEXIBIM_UL_tags", "",
+            "FLEXIBIM_UL_applied", "",
             data, "tags",
             data, "active_tag_index",
             rows=max(2, min(len(data.tags), 8)),
         )
         side = row.column(align=True)
-        side.operator("flexibim.tag_add", icon="ADD", text="")
-        side.operator("flexibim.tag_remove", icon="REMOVE", text="")
-        side.separator()
-        side.operator("flexibim.tag_from_library", icon="ASSET_MANAGER", text="")
-        side.operator("flexibim.tag_duplicate", icon="DUPLICATE", text="")
+        side.operator_menu_enum("flexibim.tag_apply", "name", icon="ADD", text="")
+        side.operator("flexibim.tag_unapply", icon="REMOVE", text="")
         if len(data.tags) > 1:
             side.separator()
             side.operator("flexibim.tag_move", icon="TRIA_UP", text="").direction = "UP"
             side.operator("flexibim.tag_move", icon="TRIA_DOWN", text="").direction = "DOWN"
 
-        tag = data.active_tag
-        if tag is None:
-            layout.label(text="Object has no tags", icon="INFO")
-            return
 
-        ctx = api.unit_context(context.scene)
-        resolved = api.resolve_tag(tag, context.scene)
-
-        box = layout.box()
-        column = box.column(align=True)
-        column.prop(tag, "name")
-        row = column.row(align=True)
-        row.prop(tag, "source", expand=True)
-
-        if tag.source == C.SOURCE_LIBRARY:
-            if resolved.missing_library_entry:
-                warning = box.column(align=True)
-                warning.alert = True
-                warning.label(text=f"No library tag named '{tag.name}'", icon="ERROR")
-                warning.operator("flexibim.library_from_tag", icon="ADD",
-                                 text="Create Library Tag")
-            else:
-                info = box.row(align=True)
-                info.label(text="Cost inherited from library", icon="LINKED")
-                info.operator("flexibim.tag_localize", text="Make Local")
-                box.label(text=f"Category: {resolved.category.title()}")
-        else:
-            column.prop(tag, "category")
-
-        column.prop(tag, "description")
-
-        cost_box = box.box()
-        cost_box.label(text="Cost", icon="FUND")
-        if tag.source == C.SOURCE_LIBRARY and not resolved.missing_library_entry:
-            entry = api.get_library_tag(context.scene, tag.name)
-            sub = cost_box.column(align=True)
-            sub.enabled = False
-            _draw_cost(sub, entry.cost, ctx, measurements=api.measure_object(obj, context))
-        else:
-            _draw_cost(cost_box, tag.cost, ctx,
-                       measurements=api.measure_object(obj, context))
-
-        result = api.tag_cost(obj, tag, context.scene, context)
-        if result.priced:
-            row = cost_box.row()
-            row.label(text="Tag Cost")
-            row.label(text=units.format_currency(result.amount, ctx))
-
-        _draw_properties(box, tag, "TAG")
-        if resolved.inherited_keys:
-            inherited = box.box()
-            inherited.label(text="Inherited from library", icon="LINKED")
-            for key in resolved.inherited_keys:
-                row = inherited.row()
-                row.label(text=key)
-                row.label(text=str(resolved.properties[key]))
-
-        tools = layout.column(align=True)
-        tools.operator("flexibim.tag_apply_to_selected", icon="PASTEDOWN")
-        tools.operator("flexibim.tags_copy_to_selected", icon="COPYDOWN")
-        row = tools.row(align=True)
-        row.operator("flexibim.tag_select_objects", icon="RESTRICT_SELECT_OFF",
-                     text="Select Same Tag").tag_name = tag.name
-        row.operator("flexibim.library_from_tag", icon="ASSET_MANAGER", text="To Library")
-
-
-class FLEXIBIM_PT_library(_Sidebar, bpy.types.Panel):
-    bl_label = "Tag Library"
-    bl_idname = "FLEXIBIM_PT_library"
+class FLEXIBIM_PT_tags(_Sidebar, bpy.types.Panel):
+    bl_label = "Tags"
+    bl_idname = "FLEXIBIM_PT_tags"
     bl_parent_id = "FLEXIBIM_PT_main"
     bl_options = {"DEFAULT_CLOSED"}
 
@@ -270,20 +186,20 @@ class FLEXIBIM_PT_library(_Sidebar, bpy.types.Panel):
 
         row = layout.row()
         row.template_list(
-            "FLEXIBIM_UL_library", "",
-            project, "library",
-            project, "active_library_index",
-            rows=max(2, min(len(project.library), 8)),
+            "FLEXIBIM_UL_tags", "",
+            project, "tags",
+            project, "active_tag_index",
+            rows=max(2, min(len(project.tags), 8)),
         )
         side = row.column(align=True)
-        side.operator("flexibim.library_add", icon="ADD", text="")
-        side.operator("flexibim.library_remove", icon="REMOVE", text="")
+        side.operator("flexibim.tag_create", icon="ADD", text="")
+        side.operator("flexibim.tag_delete", icon="REMOVE", text="")
         side.separator()
-        side.operator("flexibim.library_duplicate", icon="DUPLICATE", text="")
+        side.operator("flexibim.tag_duplicate", icon="DUPLICATE", text="")
 
-        entry = project.active_library_tag
+        entry = project.active_tag
         if entry is None:
-            layout.label(text="No tag definitions yet", icon="INFO")
+            layout.label(text="No tags yet", icon="INFO")
             return
 
         ctx = api.unit_context(context.scene)
@@ -298,11 +214,7 @@ class FLEXIBIM_PT_library(_Sidebar, bpy.types.Panel):
         cost_box.label(text="Cost", icon="FUND")
         _draw_cost(cost_box, entry.cost, ctx, show_quantity=False)
 
-        _draw_properties(box, entry, "LIBRARY")
-
-        tools = layout.column(align=True)
-        tools.operator("flexibim.library_assign", icon="PASTEDOWN")
-        tools.operator("flexibim.library_select_users", icon="RESTRICT_SELECT_OFF")
+        _draw_properties(box, entry)
 
 
 class FLEXIBIM_PT_costs(_Sidebar, bpy.types.Panel):
@@ -331,7 +243,7 @@ class FLEXIBIM_PT_costs(_Sidebar, bpy.types.Panel):
         entries = api.cost_entries(scene, objects, context)
         if not entries:
             layout.label(text="Nothing tagged yet", icon="INFO")
-            layout.operator("flexibim.tag_add", icon="ADD")
+            layout.operator("flexibim.tag_create", icon="ADD")
             return
 
         row = layout.row(align=True)
@@ -423,11 +335,11 @@ class FLEXIBIM_PT_project(_Sidebar, bpy.types.Panel):
 
 
 classes = (
+    FLEXIBIM_UL_applied,
     FLEXIBIM_UL_tags,
-    FLEXIBIM_UL_library,
     FLEXIBIM_UL_properties,
+    FLEXIBIM_PT_apply,
     FLEXIBIM_PT_tags,
-    FLEXIBIM_PT_library,
     FLEXIBIM_PT_costs,
     FLEXIBIM_PT_project,
 )

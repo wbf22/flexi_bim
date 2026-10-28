@@ -1,7 +1,9 @@
 """Serialisation: CSV cost schedules and JSON tag exchange.
 
-The JSON format is intentionally flat and readable so tag libraries can be
-shared between projects (and eventually mapped onto IFC property sets).
+The JSON format is intentionally flat and readable so whole tag registries can
+be shared between projects (and eventually mapped onto IFC property sets).  It
+stores each tag definition once, plus the list of tag names applied to each
+object.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from . import costing
 from . import measure
 from . import props
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +33,7 @@ def schedule_rows(scene, objects=None, context=None, per_object=False):
 
     if per_object:
         header = [
-            "Object", "Tag", "Category", "Source", "Cost Mode", "Measured By",
+            "Object", "Tag", "Category", "Cost Mode", "Measured By",
             "Quantity", "Unit", "Waste %", "Rate", "Amount", "Properties", "Notes",
         ]
         rows = [header]
@@ -40,7 +42,6 @@ def schedule_rows(scene, objects=None, context=None, per_object=False):
                 object_name,
                 resolved.name,
                 resolved.category,
-                resolved.source,
                 result.mode,
                 result.measurement if result.mode == C.COST_MODE_MEASURED else "",
                 _number(result.charged_quantity),
@@ -122,17 +123,15 @@ def _properties_to_list(properties):
     ]
 
 
-def _tag_to_dict(tag, include_source=True):
-    data = {
+def _tag_to_dict(tag):
+    return {
         "name": tag.name,
         "category": tag.category,
         "description": tag.description,
+        "color": [round(float(c), 4) for c in getattr(tag, "color", ())],
         "cost": _cost_to_dict(tag.cost),
         "properties": _properties_to_list(tag.properties),
     }
-    if include_source:
-        data["source"] = getattr(tag, "source", C.SOURCE_LOCAL)
-    return data
 
 
 def to_dict(scene, objects=None) -> dict:
@@ -147,14 +146,9 @@ def to_dict(scene, objects=None) -> dict:
             "currency_decimals": project.currency_decimals if project else 2,
             "unit_basis": project.unit_basis if project else "PROJECT",
         },
-        "library": [
-            _tag_to_dict(entry, include_source=False) for entry in api.library_tags(scene)
-        ],
+        "tags": [_tag_to_dict(entry) for entry in api.all_tags(scene)],
         "objects": [
-            {
-                "name": obj.name,
-                "tags": [_tag_to_dict(tag) for tag in api.get_tags(obj)],
-            }
+            {"name": obj.name, "tags": api.applied_tag_names(obj)}
             for obj in objects
         ],
     }
@@ -168,11 +162,11 @@ def _apply_cost(target, data):
     if not isinstance(data, dict):
         return
     mapping = {
-        "mode": ("mode", str, [m[0] for m in C.COST_MODE_ITEMS]),
-        "measurement": ("measurement", str, [m[0] for m in C.MEASURE_ITEMS]),
-        "quantity_source": ("quantity_source", str, [m[0] for m in C.QUANTITY_SOURCE_ITEMS]),
+        "mode": ("mode", [m[0] for m in C.COST_MODE_ITEMS]),
+        "measurement": ("measurement", [m[0] for m in C.MEASURE_ITEMS]),
+        "quantity_source": ("quantity_source", [m[0] for m in C.QUANTITY_SOURCE_ITEMS]),
     }
-    for key, (attr, _caster, allowed) in mapping.items():
+    for key, (attr, allowed) in mapping.items():
         value = data.get(key)
         if value in allowed:
             setattr(target, attr, value)
@@ -204,14 +198,17 @@ def _apply_tag(target, data):
     if category in {c[0] for c in C.CATEGORY_ITEMS}:
         target.category = category
     target.description = str(data.get("description", ""))
-    source = data.get("source")
-    if hasattr(target, "source") and source in {s[0] for s in C.TAG_SOURCE_ITEMS}:
-        target.source = source
+    color = data.get("color")
+    if isinstance(color, (list, tuple)) and len(color) == 3 and hasattr(target, "color"):
+        try:
+            target.color = tuple(float(c) for c in color)
+        except (TypeError, ValueError):
+            pass
     _apply_cost(target.cost, data.get("cost"))
     _apply_properties(target, data.get("properties"))
 
 
-def from_dict(scene, data, *, library_only=False, replace=False) -> dict:
+def from_dict(scene, data, *, tags_only=False, replace=False) -> dict:
     """Load tags from a parsed JSON payload. Returns import counts."""
     if not isinstance(data, dict) or data.get("format") != "flexibim-tags":
         raise ValueError("Not a FlexiBIM tag file")
@@ -219,7 +216,7 @@ def from_dict(scene, data, *, library_only=False, replace=False) -> dict:
         raise ValueError("Tag file was written by a newer version of FlexiBIM")
 
     project = api.project(scene)
-    stats = {"library": 0, "tags": 0, "objects": 0, "missing": 0}
+    stats = {"tags": 0, "applied": 0, "objects": 0, "missing": 0}
 
     settings = data.get("project") or {}
     if project is not None and isinstance(settings, dict):
@@ -235,52 +232,44 @@ def from_dict(scene, data, *, library_only=False, replace=False) -> dict:
 
     if project is not None:
         if replace:
-            project.library.clear()
-        for entry_data in data.get("library") or ():
+            project.tags.clear()
+        for entry_data in data.get("tags") or ():
             if not isinstance(entry_data, dict):
                 continue
             name = str(entry_data.get("name", ""))
-            existing = api.get_library_tag(scene, name)
-            entry = existing if existing is not None else project.library.add()
+            existing = api.get_tag(scene, name)
+            entry = existing if existing is not None else project.tags.add()
             _apply_tag(entry, entry_data)
             entry.previous_name = entry.name
-            stats["library"] += 1
+            stats["tags"] += 1
 
-    if not library_only:
+    if not tags_only:
         by_name = {obj.name: obj for obj in api.all_objects(scene)}
         for object_data in data.get("objects") or ():
             if not isinstance(object_data, dict):
                 continue
             obj = by_name.get(object_data.get("name"))
-            if obj is None:
+            if obj is None or api.object_data(obj) is None:
                 stats["missing"] += 1
                 continue
             holder = api.object_data(obj)
-            if holder is None:
-                stats["missing"] += 1
-                continue
             if replace:
                 holder.tags.clear()
-            for tag_data in object_data.get("tags") or ():
-                if not isinstance(tag_data, dict):
-                    continue
-                name = str(tag_data.get("name", ""))
-                existing = api.get_tag(obj, name)
-                tag = existing if existing is not None else holder.tags.add()
-                _apply_tag(tag, tag_data)
-                stats["tags"] += 1
+            for name in object_data.get("tags") or ():
+                api.apply_tag(obj, str(name))
+                stats["applied"] += 1
             stats["objects"] += 1
 
     measure.invalidate_costs()
     return stats
 
 
-def loads(scene, text, *, library_only=False, replace=False) -> dict:
+def loads(scene, text, *, tags_only=False, replace=False) -> dict:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as error:
         raise ValueError(f"Invalid JSON: {error}") from error
-    return from_dict(scene, payload, library_only=library_only, replace=replace)
+    return from_dict(scene, payload, tags_only=tags_only, replace=replace)
 
 
 # ---------------------------------------------------------------------------

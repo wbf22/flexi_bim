@@ -25,17 +25,19 @@ Three coexisting modeling levels:
 ## Done
 - Addon boilerplate, repo structure, sidebar panel (registers cleanly on Blender 4.4.3)
 - Packaged `flexi_bim.zip`; verified install-from-disk layout (package at zip root)
-- Tagging system: tags on any object, costs, custom properties, tag library,
-  quantity take-off, cost rollup/schedules (see `docs/TAGGING.md`)
-- Every created tag auto-registers in the reusable tag library and links to it
-  (re-applying the same name reuses the definition; `reusable=False` opts out)
+- Tagging system: tags on any object, costs, custom properties, quantity
+  take-off, cost rollup/schedules (see `docs/TAGGING.md`)
+- Single **tag registry**: every tag is defined once and referenced by objects,
+  so editing a tag re-prices/re-labels every object using it (no local/library
+  split, no per-object overrides)
+- JSON v2 export/import (registry + object references), CSV schedule export
 - Restored `tagging/measure.py` (had been overwritten by a copy of `exchange.py`)
 - Root sidebar panel wired into `ui/panel.py`; orphaned `tagging/panel.py` removed
 - All FlexiBIM panels verified to draw without error on Blender 4.4.3
 
 ## Tooling
-- [ ] Test suite + `tests/mockbpy` (referenced by README, currently missing)
-- [ ] `scripts/blender_smoke.py` (referenced by README, currently missing)
+- [ ] Test suite + `tests/mockbpy`
+- [ ] `scripts/blender_smoke.py`
 
 ## Phase 1 — Tagging
 - [x] Define semantic type enum (wall, slab, beam, column, window, door, roof, room...)
@@ -45,12 +47,13 @@ Three coexisting modeling levels:
 - [x] Tag inspector / list view of all tagged objects (per tag + per object rollup)
 - [x] Cost per tag: flat rate or rate per measured quantity in project units
 - [x] Arbitrary custom key/value properties per tag
-- [x] Reusable tag library with inheritance + local overrides
-- [x] CSV cost schedule export, JSON tag/library import-export
+- [x] Single project tag registry (define once, apply anywhere; editing a tag
+      updates every object that uses it)
+- [x] CSV cost schedule export, JSON tag import-export
 - [ ] Auto-numbering (e.g. W-01, D-01, R-101) — needs an instance-level ID
       alongside the tag name
 - [ ] Assign tags from the Outliner / right-click context menu
-- [ ] Viewport colour overlay driven by library tag colour
+- [ ] Viewport colour overlay driven by tag colour
 
 ## Phase 2 — Orthographic Drawings
 - [ ] Generate plan view (top-down ortho) from geometry

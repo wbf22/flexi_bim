@@ -32,19 +32,15 @@ class CostSpec:
 
 @dataclass
 class ResolvedTag:
-    """A tag with library inheritance applied, ready for costing/scheduling."""
+    """A tag definition in a form that is ready for costing/scheduling."""
 
     name: str
     category: str = "NONE"
-    source: str = C.SOURCE_LOCAL
     description: str = ""
     cost: CostSpec = field(default_factory=CostSpec)
-    #: Merged key -> value mapping (library defaults, overridden by the object).
     properties: dict = field(default_factory=dict)
-    #: Keys that came from the library definition.
-    inherited_keys: tuple = ()
-    #: True when the tag points at a library entry that no longer exists.
-    missing_library_entry: bool = False
+    #: True when an object references a tag that no longer exists.
+    missing: bool = False
 
 
 @dataclass
@@ -117,47 +113,15 @@ def property_value(item):
     return raw
 
 
-def resolve(tag, library_lookup=None) -> ResolvedTag:
-    """Resolve ``tag`` (an object tag) against the project tag library.
-
-    ``library_lookup`` maps a tag name to a library definition (or ``None``).
-    Library tags supply the cost definition and default properties; properties
-    defined on the object tag override the library's defaults.
-    """
+def resolve(tag) -> ResolvedTag:
+    """Build a :class:`ResolvedTag` from a project tag definition."""
     name = (getattr(tag, "name", "") or "").strip()
-    source = getattr(tag, "source", C.SOURCE_LOCAL)
-    local_props = properties_from(getattr(tag, "properties", ()))
-    definition = None
-    missing = False
-
-    if source == C.SOURCE_LIBRARY:
-        definition = library_lookup(name) if library_lookup else None
-        missing = definition is None
-
-    if definition is not None:
-        cost = cost_spec_from(getattr(definition, "cost", None))
-        inherited = properties_from(getattr(definition, "properties", ()))
-        category = getattr(definition, "category", "NONE")
-        description = getattr(definition, "description", "")
-        merged = dict(inherited)
-        merged.update(local_props)
-        inherited_keys = tuple(k for k in inherited if k not in local_props)
-    else:
-        cost = cost_spec_from(getattr(tag, "cost", None))
-        category = getattr(tag, "category", "NONE")
-        description = getattr(tag, "description", "")
-        merged = local_props
-        inherited_keys = ()
-
     return ResolvedTag(
         name=name,
-        category=category,
-        source=source,
-        description=description,
-        cost=cost,
-        properties=merged,
-        inherited_keys=inherited_keys,
-        missing_library_entry=missing,
+        category=getattr(tag, "category", "NONE"),
+        description=getattr(tag, "description", ""),
+        cost=cost_spec_from(getattr(tag, "cost", None)),
+        properties=properties_from(getattr(tag, "properties", ())),
     )
 
 
@@ -197,8 +161,8 @@ def cost_of(resolved: ResolvedTag, measurements, ctx: units.UnitContext) -> Cost
         dimension=spec.dimension,
     )
 
-    if resolved.missing_library_entry:
-        result.note = f"No library tag named '{resolved.name}'"
+    if resolved.missing:
+        result.note = f"No tag named '{resolved.name}' in the project"
         return result
 
     if spec.mode == C.COST_MODE_NONE:

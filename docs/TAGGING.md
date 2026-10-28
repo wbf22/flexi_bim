@@ -21,20 +21,22 @@ used later by drawings and schedules) and a free-text **description**.
 
 ```
 scene.flexibim                     FlexiBIMProject
-  .library[]                       reusable tag definitions
+  .tags[]                          the tag registry — every tag, defined once
+      .name, .category, .description, .color
+      .cost                        FlexiBIMCost
+      .properties[]                FlexiBIMProperty (key / value / value_type)
   .currency, .currency_decimals    how money is displayed
   .unit_basis                      which units cost rates are quoted in
 
 object.flexibim                    FlexiBIMObject
-  .tags[]                          FlexiBIMTag
-      .name, .category, .description
-      .source                      LOCAL | LIBRARY
-      .cost                        FlexiBIMCost
-      .properties[]                FlexiBIMProperty (key / value / value_type)
+  .tags[]                          applied tags — references by name
 ```
 
-These are `PropertyGroup`s attached to the ID, so Blender stores them as ID
-custom properties inside the `.blend`. Two consequences worth knowing:
+A tag is defined **once**, in the project registry. Objects hold only a
+reference (the tag's name), so editing a tag's rate, category or properties
+updates every object that uses it. These are `PropertyGroup`s attached to the
+ID, so Blender stores them as ID custom properties inside the `.blend`. Two
+consequences worth knowing:
 
 * Tags live on the **object**, not the mesh, so they survive remeshing,
   retopology and outright replacement of the geometry.
@@ -93,24 +95,19 @@ shows. `scale_length` is honoured as well.
 
 ---
 
-## Local tags vs the tag library
+## One tag registry
 
-A tag's **Source** decides where its cost and default properties come from:
+There is no local/library split. Every tag lives once in the project registry:
 
-* **Local** — stored on the object. Quick, self-contained, per-object tweaks.
-* **Library** — inherited from a definition in `scene.flexibim.library`.
+* Define a tag — name, category, description, colour, cost and custom
+  properties — in the **Tags** panel.
+* Apply it to any number of objects from the **Object Tags** panel.
 
-Library tags are the ones that make a project maintainable: define
-`Exterior Wall 2x6` once at `$14.50/ft²` and every linked object re-prices the
-moment you edit the rate. Renaming a library tag updates every linked object
-automatically; deleting one warns you how many objects are left dangling, and
-those tags are flagged in both the list and the cost summary rather than
-silently costing zero.
-
-Custom properties **merge**: the library supplies defaults, and properties set
-on the object override them key by key. The panel shows which keys were
-inherited. *Make Local* bakes the current definition onto the object so it can
-diverge; *Promote to Library* does the reverse.
+Because objects reference tags by name, editing `Exterior Wall 2x6` at
+`$14.50/ft²` re-prices every object using it the moment you change the rate;
+renaming a tag updates every object automatically; deleting a tag removes it
+from every object (and reports how many were affected). A registry count on the
+right of each row shows how many objects currently use the tag.
 
 ---
 
@@ -118,8 +115,8 @@ diverge; *Promote to Library* does the reverse.
 
 | Panel | What it does |
 |---|---|
-| **Tags** | Tag list for the active object, the active tag's cost + custom properties, and tools to apply tags across the selection |
-| **Tag Library** | Reusable definitions, their costs/defaults, assign-to-selected, select-users |
+| **Object Tags** | The active object's applied tags, a menu to apply a registry tag, and remove/reorder |
+| **Tags** | Manage the tag registry: create, duplicate and delete tags, and edit their category, colour, cost and custom properties |
 | **Cost Summary** | Per-tag or per-object rollup, whole scene or selection only, CSV export |
 | **Project Settings** | Currency, quantity units, tagged/untagged counts, JSON import/export |
 
@@ -132,22 +129,29 @@ from flexi_bim.tagging import api, constants as C
 
 wall = bpy.context.object
 
-tag = api.add_tag(wall, "Exterior Wall 2x6", category="WALL")
+tag = api.create_tag(scene, "Exterior Wall 2x6", category="WALL")
 tag.cost.mode = C.COST_MODE_MEASURED
 tag.cost.measurement = C.MEASURE_WALL_AREA
 tag.cost.rate = 14.50
 api.set_property(tag, "Fire Rating", "1 hr")
 api.set_property(tag, "R Value", 21)          # typed automatically
 
-api.tag_cost(wall, tag, scene).amount          # -> 3480.0
+api.apply_tag(wall, "Exterior Wall 2x6")       # reference the registry tag
+api.unapply_tag(wall, "Exterior Wall 2x6")     # stop using it
+
+api.tag_cost(wall, "Exterior Wall 2x6", scene).amount  # -> 3480.0
 api.object_cost(wall, scene).amount            # every tag on the object
+api.object_tags(wall, scene)                   # resolved definitions
 api.cost_rollup(scene)                         # per-tag totals, priciest first
 api.project_total(scene)
 
+api.get_tag(scene, "Exterior Wall 2x6")        # registry definition
+api.all_tags(scene)                            # every tag in the registry
+api.delete_tag(scene, "Exterior Wall 2x6")     # removes it from every object
 api.objects_with_tag(scene, "Exterior Wall 2x6")
 api.objects_in_category(scene, "WALL")
 api.untagged_objects(scene)                    # documentation preflight
-api.resolve_tag(tag, scene).properties         # library defaults + overrides
+api.resolve_tag(scene, tag).properties         # category, cost and properties
 ```
 
 Serialisation lives in `flexi_bim.tagging.exchange`:
@@ -156,16 +160,16 @@ Serialisation lives in `flexi_bim.tagging.exchange`:
 from flexi_bim.tagging import exchange
 exchange.schedule_csv(scene, per_object=True)  # cost schedule
 exchange.summary_text(scene)                   # one line per tag
-exchange.dumps(scene)                          # JSON: library + object tags
-exchange.loads(scene, text, library_only=True) # share a library between projects
+exchange.dumps(scene)                          # JSON: registry + object tags
+exchange.loads(scene, text, tags_only=True)    # share tags between projects
 ```
 
 ---
 
 ## Notes for the phases that follow
 
-* `api.resolve_tag()` is the single place where inheritance is applied — the
-  drawing and schedule generators should read resolved tags, never raw ones.
+* `api.resolve_tag()` is the single place a tag reference becomes a definition —
+  the drawing and schedule generators should read resolved tags, never raw ones.
 * `category` is the hook for symbols/linework; `properties` map cleanly onto
   IFC property sets when that day comes.
 * `api.untagged_objects()` is the seed of the documentation preflight report.

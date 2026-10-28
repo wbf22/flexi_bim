@@ -1,5 +1,9 @@
 """Property groups backing the tagging system.
 
+Every tag is a single, project-wide definition: objects **reference** tags by
+name rather than carrying their own copy.  Editing a tag therefore updates every
+object using it, and there is no local/library split to reason about.
+
 Everything lives in ``PropertyGroup``s attached to IDs, which Blender stores as
 ID custom properties in the .blend.  That satisfies the project's "metadata in
 custom properties" rule: the data rides on the *object*, not the mesh, so it
@@ -8,12 +12,12 @@ survives remeshing, re-topology and geometry replacement.
 Layout::
 
     scene.flexibim                -> FlexiBIMProject
-        .library[]                -> FlexiBIMLibraryTag   (reusable definitions)
-        .currency / .unit_basis   -> project-wide costing settings
-    object.flexibim               -> FlexiBIMObject
-        .tags[]                   -> FlexiBIMTag          (tags on this object)
+        .tags[]                   -> FlexiBIMTag          (the tag registry)
             .cost                 -> FlexiBIMCost
             .properties[]         -> FlexiBIMProperty     (key/value pairs)
+        .currency / .unit_basis   -> project-wide costing settings
+    object.flexibim               -> FlexiBIMObject
+        .tags[]                   -> FlexiBIMAppliedTag   (references by name)
 """
 
 # NOTE: no `from __future__ import annotations` here. Blender's RNA registration
@@ -44,12 +48,12 @@ _rename_suspended = 0
 
 @contextlib.contextmanager
 def suspend_rename_propagation():
-    """Assign library tag names without re-pointing existing object tags.
+    """Assign tag names without re-pointing the objects that reference them.
 
-    The rename callback exists so that renaming a definition in the UI keeps
-    linked objects attached to it.  Code that *builds* definitions (duplicate,
-    import, copy) assigns names for entirely different reasons and must not
-    drag other objects' tags along with it.
+    The rename callback exists so that renaming a tag in the UI keeps every
+    object attached to it.  Code that *builds* tags (duplicate, import, create)
+    assigns names for entirely different reasons and must not drag other
+    objects' references along with it.
     """
     global _rename_suspended
     _rename_suspended += 1
@@ -152,43 +156,10 @@ class FlexiBIMCost(PropertyGroup):
 # ---------------------------------------------------------------------------
 
 class FlexiBIMTag(PropertyGroup):
-    """A tag applied to a Blender object."""
-
-    name: StringProperty(
-        name="Name",
-        description="Tag name - the key everything else is grouped by",
-        default="Tag",
-        update=_redraw,
-    )
-    category: EnumProperty(
-        name="Category",
-        description="Optional semantic type, used by drawings and schedules",
-        items=C.CATEGORY_ITEMS,
-        default="NONE",
-        update=_redraw,
-    )
-    description: StringProperty(
-        name="Description",
-        description="Free text note about this tag",
-        default="",
-    )
-    source: EnumProperty(
-        name="Source",
-        description="Whether cost/defaults are stored locally or inherited from the library",
-        items=C.TAG_SOURCE_ITEMS,
-        default=C.SOURCE_LOCAL,
-        update=_redraw,
-    )
-    cost: PointerProperty(type=FlexiBIMCost)
-    properties: CollectionProperty(type=FlexiBIMProperty)
-    active_property_index: IntProperty(name="Active Property", default=0, min=0)
-
-
-class FlexiBIMLibraryTag(PropertyGroup):
-    """A reusable tag definition shared by the whole project."""
+    """A tag definition in the project registry (``scene.flexibim.tags``)."""
 
     def _rename(self, context):
-        """Keep object tags pointing at this definition when it is renamed."""
+        """Keep object references pointing at this tag when it is renamed."""
         from . import api
 
         new_name = (self.name or "").strip()
@@ -237,6 +208,16 @@ class FlexiBIMLibraryTag(PropertyGroup):
     active_property_index: IntProperty(name="Active Property", default=0, min=0)
 
 
+class FlexiBIMAppliedTag(PropertyGroup):
+    """An object's reference to a project tag, stored by name."""
+
+    name: StringProperty(
+        name="Tag",
+        description="Name of the project tag this object uses",
+        default="",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Containers
 # ---------------------------------------------------------------------------
@@ -244,7 +225,7 @@ class FlexiBIMLibraryTag(PropertyGroup):
 class FlexiBIMObject(PropertyGroup):
     """Per-object FlexiBIM data (``object.flexibim``)."""
 
-    tags: CollectionProperty(type=FlexiBIMTag)
+    tags: CollectionProperty(type=FlexiBIMAppliedTag)
     active_tag_index: IntProperty(name="Active Tag", default=0, min=0)
 
     @property
@@ -257,8 +238,8 @@ class FlexiBIMObject(PropertyGroup):
 class FlexiBIMProject(PropertyGroup):
     """Scene-level FlexiBIM data (``scene.flexibim``)."""
 
-    library: CollectionProperty(type=FlexiBIMLibraryTag)
-    active_library_index: IntProperty(name="Active Library Tag", default=0, min=0)
+    tags: CollectionProperty(type=FlexiBIMTag)
+    active_tag_index: IntProperty(name="Active Tag", default=0, min=0)
 
     currency: StringProperty(
         name="Currency",
@@ -299,9 +280,9 @@ class FlexiBIMProject(PropertyGroup):
     )
 
     @property
-    def active_library_tag(self):
-        if 0 <= self.active_library_index < len(self.library):
-            return self.library[self.active_library_index]
+    def active_tag(self):
+        if 0 <= self.active_tag_index < len(self.tags):
+            return self.tags[self.active_tag_index]
         return None
 
 
@@ -309,7 +290,7 @@ classes = (
     FlexiBIMProperty,
     FlexiBIMCost,
     FlexiBIMTag,
-    FlexiBIMLibraryTag,
+    FlexiBIMAppliedTag,
     FlexiBIMObject,
     FlexiBIMProject,
 )
@@ -324,7 +305,7 @@ def register_pointers():
     bpy.types.Scene.flexibim = PointerProperty(
         type=FlexiBIMProject,
         name="FlexiBIM",
-        description="FlexiBIM project settings and tag library",
+        description="FlexiBIM project settings and tag registry",
     )
 
 

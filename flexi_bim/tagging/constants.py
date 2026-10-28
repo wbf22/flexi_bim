@@ -97,20 +97,6 @@ QUANTITY_SOURCE_ITEMS = [
 # Tag plumbing
 # ---------------------------------------------------------------------------
 
-SOURCE_LOCAL = "LOCAL"
-SOURCE_LIBRARY = "LIBRARY"
-
-TAG_SOURCE_ITEMS = [
-    (SOURCE_LOCAL, "Local", "Cost and defaults are stored on this object", "OBJECT_DATA", 0),
-    (
-        SOURCE_LIBRARY,
-        "Library",
-        "Inherit cost and default properties from the project tag library",
-        "ASSET_MANAGER",
-        1,
-    ),
-]
-
 # Optional semantic type, the hook for Phase 1 of the roadmap.
 CATEGORY_ITEMS = [
     ("NONE", "Unspecified", "No semantic type", 0),

@@ -1,12 +1,15 @@
 """Public Python API for the tagging system.
 
-Other FlexiBIM subsystems (drawings, schedules, export) and user scripts should
-go through this module rather than poking at property groups directly::
+Every tag is a single, project-wide definition stored in the tag registry
+(``scene.flexibim.tags``).  Objects **reference** tags by name, so there is no
+local/library distinction: editing a tag in one place updates every object that
+uses it.
 
     from flexi_bim.tagging import api
 
-    api.add_tag(obj, "Exterior Wall", category="WALL")
-    api.set_property(api.get_tag(obj, "Exterior Wall"), "Fire Rating", "1 hr")
+    api.create_tag(scene, "Exterior Wall", category="WALL")
+    api.set_property(api.get_tag(scene, "Exterior Wall"), "Fire Rating", "1 hr")
+    api.apply_tag(obj, "Exterior Wall")
     for obj in api.objects_with_tag(scene, "Exterior Wall"):
         print(api.object_cost(obj, scene).amount)
 """
@@ -38,53 +41,31 @@ def object_data(obj):
     return getattr(obj, "flexibim", None) if obj is not None else None
 
 
-def get_tags(obj):
-    """Every tag on ``obj`` as a list (empty when untagged)."""
-    data = object_data(obj)
+def _tag_name(value):
+    if isinstance(value, str):
+        return value.strip()
+    return (getattr(value, "name", "") or "").strip()
+
+
+# ---------------------------------------------------------------------------
+# Tag registry
+# ---------------------------------------------------------------------------
+
+def all_tags(scene):
+    """Every tag definition in the project, in registry order."""
+    data = project(scene)
     return list(data.tags) if data is not None else []
 
 
-def tag_names(obj):
-    return [tag.name for tag in get_tags(obj)]
-
-
-def get_tag(obj, name):
-    """First tag on ``obj`` matching ``name`` (case-insensitive), else ``None``."""
-    wanted = (name or "").strip().lower()
-    for tag in get_tags(obj):
-        if tag.name.strip().lower() == wanted:
-            return tag
-    return None
-
-
-def has_tag(obj, name) -> bool:
-    return get_tag(obj, name) is not None
-
-
-def is_tagged(obj) -> bool:
-    data = object_data(obj)
-    return bool(data is not None and len(data.tags))
-
-
-def library_tags(scene):
-    data = project(scene)
-    return list(data.library) if data is not None else []
-
-
-def get_library_tag(scene, name):
-    wanted = (name or "").strip().lower()
-    for entry in library_tags(scene):
+def get_tag(scene, name):
+    """The project tag named ``name`` (case-insensitive), else ``None``."""
+    wanted = _tag_name(name).lower()
+    if not wanted:
+        return None
+    for entry in all_tags(scene):
         if entry.name.strip().lower() == wanted:
             return entry
     return None
-
-
-def library_lookup(scene):
-    """Callable mapping a tag name to its library definition."""
-    index = {}
-    for entry in library_tags(scene):
-        index.setdefault(entry.name.strip().lower(), entry)
-    return lambda name: index.get((name or "").strip().lower())
 
 
 def unique_tag_name(existing_names, base="Tag") -> str:
@@ -101,132 +82,154 @@ def unique_tag_name(existing_names, base="Tag") -> str:
         counter += 1
 
 
-def _scene_for(obj):
-    """The scene an object belongs to, falling back to the active scene."""
-    scenes = getattr(obj, "users_scene", None)
-    if scenes:
-        return scenes[0]
-    return _active_scene()
-
-
-def ensure_library_tag(scene, name, *, category=None, description=None,
-                       source_tag=None):
-    """Return the reusable library definition for ``name``, creating it if needed.
-
-    This is what makes every tag reusable: any tag that exists in the project
-    also exists in the tag library, so it can be re-applied to other objects or
-    exported to another project.  When ``source_tag`` is given, its cost and
-    custom properties seed the new definition.
-    """
-    clean = (name or "").strip()
-    if not clean:
-        return None
-    existing = get_library_tag(scene, clean)
-    if existing is not None:
-        return existing
-
+def create_tag(scene, name="Tag", *, category=None, description=None):
+    """Add a new tag definition to the registry and return it."""
     data = project(scene)
     if data is None:
         return None
-
-    entry = data.library.add()
+    clean = _tag_name(name) or "Tag"
+    if get_tag(scene, clean) is not None:
+        clean = unique_tag_name([e.name for e in data.tags], clean)
+    entry = data.tags.add()
     with _props.suspend_rename_propagation():
         entry.name = clean
     entry.previous_name = clean
-
-    if source_tag is not None:
-        copy_cost(source_tag.cost, entry.cost)
-        copy_properties(source_tag.properties, entry.properties)
-        origin_category = getattr(source_tag, "category", None)
-        if origin_category and origin_category != "NONE":
-            entry.category = origin_category
-        origin_description = getattr(source_tag, "description", "")
-        if origin_description:
-            entry.description = origin_description
-
     if category is not None:
         entry.category = category
-    if description:
+    if description is not None:
         entry.description = description
-
+    data.active_tag_index = len(data.tags) - 1
     measure.invalidate_costs()
     return entry
 
 
-# ---------------------------------------------------------------------------
-# Mutation
-# ---------------------------------------------------------------------------
-
-def add_tag(obj, name="Tag", *, category=None, source=None,
-            description=None, allow_duplicate=False, reusable=True):
-    """Add a tag to ``obj`` and return it.
-
-    Every tag is reusable by default: a matching definition is registered in the
-    project tag library and the new tag links to it, so the same tag can be
-    applied to other objects and shared between projects.  Pass
-    ``reusable=False`` to create a lone, object-only tag, or ``source=LOCAL`` to
-    keep the tag independent of its library definition.
-
-    Re-adding an existing tag name is a no-op (the existing tag is returned)
-    unless ``allow_duplicate`` is set.
-    """
-    data = object_data(obj)
-    if data is None:
-        raise TypeError(f"{obj!r} cannot carry FlexiBIM tags")
-
-    clean = (name or "Tag").strip() or "Tag"
-    scene = _scene_for(obj)
-
-    if not allow_duplicate:
-        existing = get_tag(obj, clean)
-        if existing is not None:
-            if reusable:
-                ensure_library_tag(scene, clean, source_tag=existing)
-            return existing
-
-    if reusable:
-        definition = ensure_library_tag(scene, clean, category=category,
-                                        description=description)
-        if source is None:
-            source = C.SOURCE_LIBRARY if definition is not None else C.SOURCE_LOCAL
-
-    tag = data.tags.add()
-    tag.name = clean
-    if category is not None:
-        tag.category = category
-    if description is not None:
-        tag.description = description
-    tag.source = source if source is not None else C.SOURCE_LOCAL
-    data.active_tag_index = len(data.tags) - 1
-    measure.invalidate_costs()
-    return tag
+def ensure_tag(scene, name, *, category=None, description=None):
+    """Return the tag named ``name``, creating it if it does not exist yet."""
+    existing = get_tag(scene, name)
+    if existing is not None:
+        return existing
+    return create_tag(scene, name, category=category, description=description)
 
 
-def add_library_tag(obj, name, *, fallback_local=True):
-    """Tag ``obj`` with a library definition, linking it to the library."""
-    tag = add_tag(obj, name, source=C.SOURCE_LIBRARY)
-    scene = _active_scene()
-    if not fallback_local and get_library_tag(scene, name) is None:
-        remove_tag(obj, name)
-        raise KeyError(f"No library tag named {name!r}")
-    tag.source = C.SOURCE_LIBRARY
-    return tag
-
-
-def remove_tag(obj, name) -> bool:
-    """Remove the first tag matching ``name``; returns whether it existed."""
-    data = object_data(obj)
+def delete_tag(scene, name) -> bool:
+    """Remove a tag definition and strip every object reference to it."""
+    data = project(scene)
     if data is None:
         return False
-    wanted = (name or "").strip().lower()
-    for index, tag in enumerate(data.tags):
-        if tag.name.strip().lower() == wanted:
-            remove_tag_at(obj, index)
+    wanted = _tag_name(name).lower()
+    for index, entry in enumerate(data.tags):
+        if entry.name.strip().lower() == wanted:
+            removed_name = entry.name
+            data.tags.remove(index)
+            data.active_tag_index = min(
+                max(0, index - 1), max(0, len(data.tags) - 1)
+            )
+            rename_tag_references(scene, removed_name, None, previous=wanted)
+            measure.invalidate_costs()
             return True
     return False
 
 
-def remove_tag_at(obj, index) -> bool:
+def rename_tag_references(scene, old_name, new_name, *, previous=None) -> int:
+    """Point object references at ``new_name`` instead of ``old_name``.
+
+    Called when a tag is renamed (pass the new name) or deleted (pass ``None``,
+    which strips the reference).  ``previous`` lets a delete pass the already
+    matching lower-case name.
+    """
+    wanted = previous if previous is not None else (old_name or "").strip().lower()
+    if not wanted:
+        return 0
+    changed = 0
+    for obj in _iter_objects(scene):
+        data = object_data(obj)
+        if data is None:
+            continue
+        for index in range(len(data.tags) - 1, -1, -1):
+            ref = data.tags[index]
+            if ref.name.strip().lower() != wanted:
+                continue
+            if new_name is None:
+                data.tags.remove(index)
+            else:
+                ref.name = new_name
+            changed += 1
+        data.active_tag_index = min(
+            data.active_tag_index, max(0, len(data.tags) - 1)
+        )
+    if changed:
+        measure.invalidate_costs()
+    return changed
+
+
+# ---------------------------------------------------------------------------
+# Applied tags (object <-> registry references)
+# ---------------------------------------------------------------------------
+
+def applied_tags(obj):
+    """The tag references on ``obj`` (empty when untagged)."""
+    data = object_data(obj)
+    return list(data.tags) if data is not None else []
+
+
+def applied_tag_names(obj):
+    return [ref.name for ref in applied_tags(obj)]
+
+
+def get_applied(obj, name):
+    """The reference on ``obj`` matching ``name``, else ``None``."""
+    wanted = _tag_name(name).lower()
+    for ref in applied_tags(obj):
+        if ref.name.strip().lower() == wanted:
+            return ref
+    return None
+
+
+def has_tag(obj, name) -> bool:
+    return get_applied(obj, name) is not None
+
+
+def is_tagged(obj) -> bool:
+    data = object_data(obj)
+    return bool(data is not None and len(data.tags))
+
+
+def apply_tag(obj, name, *, create=True, category=None, description=None):
+    """Tag ``obj`` with the tag named ``name`` and return the reference.
+
+    The tag definition is created in the registry first when ``create`` is set
+    (the default), so the same tag is available to apply to other objects.
+    Applying a tag an object already carries is a no-op.
+    """
+    data = object_data(obj)
+    if data is None:
+        return None
+    clean = _tag_name(name) or "Tag"
+    if create:
+        ensure_tag(_scene_for(obj), clean, category=category, description=description)
+    ref = get_applied(obj, clean)
+    if ref is not None:
+        return ref
+    ref = data.tags.add()
+    ref.name = clean
+    data.active_tag_index = len(data.tags) - 1
+    measure.invalidate_costs()
+    return ref
+
+
+def unapply_tag(obj, name) -> bool:
+    """Remove the first reference to ``name`` on ``obj``."""
+    data = object_data(obj)
+    if data is None:
+        return False
+    wanted = _tag_name(name).lower()
+    for index, ref in enumerate(data.tags):
+        if ref.name.strip().lower() == wanted:
+            return unapply_tag_at(obj, index)
+    return False
+
+
+def unapply_tag_at(obj, index) -> bool:
     data = object_data(obj)
     if data is None or not (0 <= index < len(data.tags)):
         return False
@@ -237,6 +240,7 @@ def remove_tag_at(obj, index) -> bool:
 
 
 def clear_tags(obj) -> int:
+    """Remove every tag reference from ``obj``; returns how many were removed."""
     data = object_data(obj)
     if data is None:
         return 0
@@ -246,6 +250,20 @@ def clear_tags(obj) -> int:
     measure.invalidate_costs()
     return count
 
+
+def object_tags(obj, scene):
+    """The tag definitions applied to ``obj`` (references resolved)."""
+    result = []
+    for ref in applied_tags(obj):
+        definition = get_tag(scene, ref.name)
+        if definition is not None:
+            result.append(definition)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Custom properties
+# ---------------------------------------------------------------------------
 
 def set_property(tag, key, value, value_type=None):
     """Set a custom property on ``tag``, adding it if needed."""
@@ -325,44 +343,21 @@ def copy_properties(source_collection, target_collection, *, clear=True):
 
 
 def copy_tag(source, target):
-    """Copy a tag (local or library definition) onto another tag.
+    """Copy a tag definition onto another (duplicate/import).
 
     The name is assigned programmatically, so rename propagation is suspended:
-    copying a definition must never re-point other objects' tags at the copy.
+    copying a definition must never re-point other objects' references.
     """
     with _props.suspend_rename_propagation():
         target.name = source.name
         target.category = getattr(source, "category", "NONE")
         target.description = getattr(source, "description", "")
-        if hasattr(target, "source"):
-            target.source = getattr(source, "source", C.SOURCE_LOCAL)
+        if hasattr(target, "color") and hasattr(source, "color"):
+            target.color = tuple(source.color)
         copy_cost(source.cost, target.cost)
         copy_properties(source.properties, target.properties)
     measure.invalidate_costs()
     return target
-
-
-def rename_tag_references(scene, old_name, new_name) -> int:
-    """Rename every *library-linked* object tag from ``old_name``to ``new_name``.
-
-    Called when a library definition is renamed so existing objects keep their
-    link instead of silently losing their cost data.
-    """
-    if not old_name or not new_name or old_name == new_name:
-        return 0
-    wanted = old_name.strip().lower()
-    changed = 0
-    for obj in _iter_objects(scene):
-        data = object_data(obj)
-        if data is None:
-            continue
-        for tag in data.tags:
-            if tag.source == C.SOURCE_LIBRARY and tag.name.strip().lower() == wanted:
-                tag.name = new_name
-                changed += 1
-    if changed:
-        measure.invalidate_costs()
-    return changed
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +377,14 @@ def _active_scene():
         return scene
     scenes = getattr(getattr(bpy, "data", None), "scenes", None)
     return scenes[0] if scenes else None
+
+
+def _scene_for(obj):
+    """The scene an object belongs to, falling back to the active scene."""
+    scenes = getattr(obj, "users_scene", None)
+    if scenes:
+        return scenes[0]
+    return _active_scene()
 
 
 def all_objects(scene=None):
@@ -407,11 +410,11 @@ def untagged_objects(scene=None, geometry_only=True):
 
 
 def objects_with_tag(scene, name):
-    wanted = (name or "").strip().lower()
+    wanted = _tag_name(name).lower()
     return [
         obj
         for obj in _iter_objects(scene)
-        if any(t.name.strip().lower() == wanted for t in get_tags(obj))
+        if any(ref.name.strip().lower() == wanted for ref in applied_tags(obj))
     ]
 
 
@@ -419,19 +422,13 @@ def objects_in_category(scene, category):
     return [
         obj
         for obj in _iter_objects(scene)
-        if any(t.category == category for t in get_tags(obj))
+        if any(tag.category == category for tag in object_tags(obj, scene))
     ]
 
 
-def all_tag_names(scene, include_library=True):
-    """Sorted, de-duplicated tag names used in the project."""
-    names = {}
-    if include_library:
-        for entry in library_tags(scene):
-            names.setdefault(entry.name.strip().lower(), entry.name)
-    for obj in _iter_objects(scene):
-        for tag in get_tags(obj):
-            names.setdefault(tag.name.strip().lower(), tag.name)
+def all_tag_names(scene):
+    """Sorted, de-duplicated tag names in the project registry."""
+    names = {entry.name.strip().lower(): entry.name for entry in all_tags(scene)}
     return [names[key] for key in sorted(names)]
 
 
@@ -452,14 +449,27 @@ def unit_context(scene) -> units.UnitContext:
     )
 
 
-def resolve_tag(tag, scene):
-    """Apply library inheritance to ``tag``."""
-    return costing.resolve(tag, library_lookup(scene))
+def resolve_tag(scene, tag) -> costing.ResolvedTag:
+    """Resolve a tag reference (or definition, or name) to a ``ResolvedTag``."""
+    if tag is None:
+        return costing.ResolvedTag(name="")
+    if isinstance(tag, str):
+        definition = get_tag(scene, tag)
+        return (
+            costing.resolve(definition)
+            if definition is not None
+            else costing.ResolvedTag(name=tag, missing=True)
+        )
+    if hasattr(tag, "cost"):
+        return costing.resolve(tag)
+    definition = get_tag(scene, _tag_name(tag))
+    if definition is not None:
+        return costing.resolve(definition)
+    return costing.ResolvedTag(name=_tag_name(tag), missing=True)
 
 
 def resolve_tags(obj, scene):
-    lookup = library_lookup(scene)
-    return [costing.resolve(tag, lookup) for tag in get_tags(obj)]
+    return [resolve_tag(scene, ref) for ref in applied_tags(obj)]
 
 
 def measure_object(obj, context=None):
@@ -469,7 +479,7 @@ def measure_object(obj, context=None):
 
 def tag_cost(obj, tag, scene, context=None):
     """Cost of a single tag on a single object."""
-    resolved = resolve_tag(tag, scene)
+    resolved = resolve_tag(scene, tag)
     return costing.cost_of(resolved, measure_object(obj, context), unit_context(scene))
 
 
@@ -489,11 +499,10 @@ def object_cost(obj, scene, context=None) -> ObjectCost:
     """Total cost of every tag on ``obj``."""
     ctx = unit_context(scene)
     measurements = measure_object(obj, context)
-    lookup = library_lookup(scene)
-    results = []
-    for tag in get_tags(obj):
-        resolved = costing.resolve(tag, lookup)
-        results.append(costing.cost_of(resolved, measurements, ctx))
+    results = [
+        costing.cost_of(resolve_tag(scene, ref), measurements, ctx)
+        for ref in applied_tags(obj)
+    ]
     return ObjectCost(
         object_name=getattr(obj, "name", ""),
         amount=sum(r.amount for r in results),
@@ -504,15 +513,14 @@ def object_cost(obj, scene, context=None) -> ObjectCost:
 def cost_entries(scene, objects=None, context=None):
     """``(object_name, ResolvedTag, CostResult)`` for every tag in the project."""
     ctx = unit_context(scene)
-    lookup = library_lookup(scene)
     depsgraph = measure.depsgraph_for(context)
     if objects is None:
         objects = tagged_objects(scene)
     entries = []
     for obj in objects:
         measurements = measure.measure_object(obj, depsgraph)
-        for tag in get_tags(obj):
-            resolved = costing.resolve(tag, lookup)
+        for ref in applied_tags(obj):
+            resolved = resolve_tag(scene, ref)
             entries.append(
                 (getattr(obj, "name", ""), resolved, costing.cost_of(resolved, measurements, ctx))
             )
