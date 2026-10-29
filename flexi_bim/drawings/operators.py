@@ -218,6 +218,55 @@ class FLEXIBIM_OT_measure_remove(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class FLEXIBIM_OT_measure_generate(bpy.types.Operator):
+    bl_idname = "flexibim.measure_generate"
+    bl_label = "Auto Generate Measurements"
+    bl_description = (
+        "Add gap measurements between consecutive objects in this view, "
+        "ordered along its axis"
+    )
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return _active_view(context) is not None
+
+    def execute(self, context):
+        view = _active_view(context)
+        sources = views.build_sources(context.scene, view, context)
+        if len(sources) < 2:
+            self.report({"WARNING"}, "View needs at least two objects to measure")
+            return {"CANCELLED"}
+
+        axis_index = {"X": 0, "Y": 1, "Z": 2}.get(view.axis, 2)
+
+        def center(source):
+            if not source.vertices:
+                return 0.0
+            return sum(v[axis_index] for v in source.vertices) / len(source.vertices)
+
+        ordered = sorted(sources, key=center)
+        existing = {frozenset((m.object_a, m.object_b)) for m in view.measurements}
+
+        added = 0
+        for a, b in zip(ordered, ordered[1:]):
+            pair = frozenset((a.name, b.name))
+            if pair in existing:
+                continue
+            measurement = view.measurements.add()
+            measurement.object_a = a.name
+            measurement.object_b = b.name
+            existing.add(pair)
+            added += 1
+
+        if not added:
+            self.report({"INFO"}, "No new measurements to add")
+            return {"CANCELLED"}
+        view.active_measurement_index = len(view.measurements) - 1
+        self.report({"INFO"}, f"Added {added} measurement(s)")
+        return {"FINISHED"}
+
+
 # ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
@@ -295,6 +344,7 @@ classes = (
     FLEXIBIM_OT_view_tag_remove,
     FLEXIBIM_OT_measure_add,
     FLEXIBIM_OT_measure_remove,
+    FLEXIBIM_OT_measure_generate,
     FLEXIBIM_OT_drawing_generate,
     FLEXIBIM_OT_drawing_export,
 )

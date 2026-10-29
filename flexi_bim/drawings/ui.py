@@ -55,7 +55,7 @@ class FLEXIBIM_PT_measurements(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = PANEL_CATEGORY
-    bl_parent_id = "FLEXIBIM_PT_main"
+    bl_parent_id = "FLEXIBIM_PT_drawings"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
@@ -76,6 +76,8 @@ class FLEXIBIM_PT_measurements(bpy.types.Panel):
         side = row.column(align=True)
         side.operator("flexibim.measure_add", icon="ADD", text="")
         side.operator("flexibim.measure_remove", icon="REMOVE", text="")
+
+        layout.operator("flexibim.measure_generate", icon="AUTO")
 
         measurement = view.active_measurement
         if measurement is not None:
