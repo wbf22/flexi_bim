@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ..core import units
 from ..tagging import api, measure
 from . import dimensions, extract
 from . import primitives as P
@@ -19,6 +20,29 @@ AXES = ("X", "Y", "Z")
 #: "+" looks along it (the mirror image).
 DIRECTIONS = ("-", "+")
 MODES = (P.CUT, P.PROJECT)
+
+
+def _is_hidden(obj):
+    """True when ``obj`` is hidden in the viewport by any means.
+
+    Covers the object's own visibility flags and, when a view layer is
+    available, collection/``hide_set`` state via :meth:`bpy.types.Object.visible_get`.
+    """
+    if getattr(obj, "hide_viewport", False):
+        return True
+    try:
+        if obj.hide_get():
+            return True
+    except (AttributeError, RuntimeError):
+        pass
+    visible_get = getattr(obj, "visible_get", None)
+    if visible_get is not None:
+        try:
+            if not visible_get():
+                return True
+        except (AttributeError, RuntimeError):
+            pass
+    return False
 
 
 @dataclass
@@ -134,6 +158,8 @@ def build_sources(scene, view, context=None):
     for obj in api.all_objects(scene):
         if getattr(obj, "type", None) not in measure.GEOMETRY_TYPES:
             continue
+        if _is_hidden(obj):
+            continue
 
         definitions = api.object_tags(obj, scene)
         names = {d.name.strip().lower() for d in definitions}
@@ -189,16 +215,29 @@ def build_measurements(scene, view, context=None):
     if not specs:
         return []
     depsgraph = measure.depsgraph_for(context)
+    ctx = api.unit_context(scene)
     cache = {}
 
     def segments_for(name):
         if name not in cache:
             obj = scene.objects.get(name)
-            geometry = measure.world_geometry(obj, depsgraph) if obj is not None else None
+            geometry = (
+                measure.world_geometry(obj, depsgraph)
+                if obj is not None and not _is_hidden(obj)
+                else None
+            )
             cache[name] = (
                 _projected_segments(geometry, view.axis, view.direction) if geometry else None
             )
         return cache[name]
+
+    def length_formatter(decimals):
+        def fmt(value):
+            project = units.convert(value, units.DIMENSION_LENGTH, ctx)
+            return units.format_quantity(
+                project, units.DIMENSION_LENGTH, ctx, precision=decimals
+            )
+        return fmt
 
     result = []
     for measurement in specs:
@@ -213,10 +252,45 @@ def build_measurements(scene, view, context=None):
             pair[0], pair[1],
             offset=getattr(measurement, "offset", 0.3),
             decimals=getattr(measurement, "decimals", 2),
+            formatter=length_formatter(getattr(measurement, "decimals", 2)),
         )
         if dimension is not None:
             result.append(dimension)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Paper scale
+# ---------------------------------------------------------------------------
+
+def paper_scale(scene) -> float:
+    """Paper millimetres per model (Blender) unit at 1:1.
+
+    Comes straight from ``scene.unit_settings.scale_length`` (metres per Blender
+    unit), so a scene modelled in millimetres prints at the right size.
+    """
+    return api.unit_context(scene).scale_length * 1000.0
+
+
+def scale_bar(scene, view, total_mm=50.0, divisions=5):
+    """A graphic scale bar for ``view`` as ``(total_mm, labels)``.
+
+    ``labels`` runs from 0 up to the real-world length the bar represents,
+    already formatted in the project's units.
+    """
+    ctx = api.unit_context(scene)
+    units_per_model = paper_scale(scene)
+    project_per_model = ctx.factor(units.DIMENSION_LENGTH)
+    denominator = max(float(view.scale), 1e-9)
+    mm_per_project = units_per_model / (project_per_model * denominator)
+    total_value = (total_mm / mm_per_project) if mm_per_project else 0.0
+    labels = [
+        units.format_quantity(
+            total_value * i / divisions, units.DIMENSION_LENGTH, ctx, precision=2
+        )
+        for i in range(divisions + 1)
+    ]
+    return total_mm, labels
 
 
 def render(scene, view, context=None) -> P.Drawing:

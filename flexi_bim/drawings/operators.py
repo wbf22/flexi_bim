@@ -57,6 +57,17 @@ def _output_path(context, name):
     return os.path.join(directory, _safe_filename(name) + ".svg")
 
 
+def _svg_options(scene, view):
+    """Common SVG writer options for ``view``: project units and a scale bar."""
+    return {
+        "scale_denominator": view.scale,
+        "units_per_model": views.paper_scale(scene),
+        "scale_bar": views.scale_bar(scene, view),
+        "scale_text": f"Scale 1:{view.scale:g}",
+        "title": view.name,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
@@ -286,8 +297,7 @@ class FLEXIBIM_OT_drawing_generate(bpy.types.Operator):
         drawing = views.render(context.scene, views.spec_from_view(view), context)
         path = _output_path(context, view.name)
         try:
-            svg_module.write(path, drawing, scale_denominator=view.scale,
-                             title=view.name)
+            svg_module.write(path, drawing, **_svg_options(context.scene, view))
         except OSError as error:
             self.report({"ERROR"}, f"Could not write file: {error}")
             return {"CANCELLED"}
@@ -328,7 +338,7 @@ class FLEXIBIM_OT_drawing_export(bpy.types.Operator):
         drawing = views.render(context.scene, views.spec_from_view(view), context)
         try:
             svg_module.write(bpy.path.abspath(self.filepath), drawing,
-                             scale_denominator=view.scale, title=view.name)
+                             **_svg_options(context.scene, view))
         except OSError as error:
             self.report({"ERROR"}, f"Could not write file: {error}")
             return {"CANCELLED"}

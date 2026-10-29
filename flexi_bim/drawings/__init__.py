@@ -30,12 +30,18 @@ def render(scene, view, context=None):
 def render_svg(scene, view, context=None, **kwargs):
     """Extract ``view`` and return it as an SVG string."""
     kwargs.setdefault("scale_denominator", view.scale)
+    kwargs.setdefault("units_per_model", views.paper_scale(scene))
+    kwargs.setdefault("scale_bar", views.scale_bar(scene, view))
+    kwargs.setdefault("scale_text", f"Scale 1:{view.scale:g}")
     return svg.to_svg(views.render(scene, view, context), **kwargs)
 
 
 def write_svg(path, scene, view, context=None, **kwargs):
     """Extract ``view`` and write it to ``path`` as SVG."""
     kwargs.setdefault("scale_denominator", view.scale)
+    kwargs.setdefault("units_per_model", views.paper_scale(scene))
+    kwargs.setdefault("scale_bar", views.scale_bar(scene, view))
+    kwargs.setdefault("scale_text", f"Scale 1:{view.scale:g}")
     return svg.write(path, views.render(scene, view, context), **kwargs)
 
 

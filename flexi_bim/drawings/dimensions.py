@@ -90,26 +90,36 @@ def nearest_pair(segments_a, segments_b):
 
 
 def format_length(value, decimals=2):
-    """Human length for a dimension label: metres when >= 1 m, else millimetres."""
+    """Fallback length label used when no project-unit formatter is supplied.
+
+    Prints metres when >= 1 m, else millimetres.  Callers that know the project
+    units should pass their own ``formatter`` to :func:`dimension_for`.
+    """
     value = abs(float(value))
     if value >= 1.0:
         return f"{value:.{max(0, int(decimals))}f} m"
     return f"{value * 1000.0:.0f} mm"
 
 
-def dimension_for(pa, pb, offset=0.3, decimals=2, color=P.DEFAULT_COLOR):
+def dimension_for(pa, pb, offset=0.3, decimals=2, color=P.DEFAULT_COLOR,
+                  formatter=None):
     """Build a :class:`~flexi_bim.drawings.primitives.Dimension`, or ``None``.
 
     Zero-length gaps (touching objects) yield ``None`` - there is nothing to
-    draw between two coincident points.
+    draw between two coincident points.  ``formatter`` maps the model-space
+    distance to the label text; it defaults to :func:`format_length`.
     """
     distance = _dist(pa, pb)
     if distance <= 1e-6:
         return None
+    if formatter is None:
+        text = format_length(distance, decimals)
+    else:
+        text = formatter(distance)
     return P.Dimension(
         a=(round(pa[0], 4), round(pa[1], 4)),
         b=(round(pb[0], 4), round(pb[1], 4)),
-        text=format_length(distance, decimals),
+        text=text,
         offset=offset,
         color=color,
     )

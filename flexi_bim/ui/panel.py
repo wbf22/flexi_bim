@@ -13,6 +13,7 @@ PANEL_CATEGORY = "FlexiBIM"
 
 class FLEXIBIM_PT_main(bpy.types.Panel):
     bl_label = "FlexiBIM"
+    bl_description = "FlexiBIM - tag freeform models and generate drawings"
     bl_idname = "FLEXIBIM_PT_main"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"

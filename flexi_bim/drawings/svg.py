@@ -17,6 +17,9 @@ _MONO = "#000000"
 _ARROW_MM = 2.5
 _TICK_MM = 2.0
 _EXTENSION_MM = 1.5
+_SCALE_BAR_H_MM = 2.0
+_SCALE_BAR_SPACE_MM = 14.0
+_SCALE_FONT_MM = 2.5
 
 
 def _hex(color):
@@ -45,6 +48,8 @@ def to_svg(
     note_space_mm=45.0,
     note_gap_mm=6.0,
     shelf_mm=5.0,
+    scale_bar=None,
+    scale_text=None,
 ):
     segments = list(drawing.segments)
     leaders = list(drawing.leaders)
@@ -65,6 +70,11 @@ def to_svg(
     height = (maxy - miny) * factor + 2 * margin_mm
     if leaders:
         width += note_space_mm
+
+    if scale_bar is not None or scale_text:
+        height += _SCALE_BAR_SPACE_MM
+    if scale_bar is not None:
+        width = max(width, float(scale_bar[0]) + 2 * margin_mm)
 
     def place(point):
         x = (point[0] - minx) * factor + margin_mm
@@ -106,6 +116,16 @@ def to_svg(
             body.extend(_dimension_svg(dim, place, factor, note_font_mm, stroke_for))
         body.append("  </g>")
 
+    if scale_bar is not None or scale_text:
+        body.append('  <g id="A-SCALE">')
+        if scale_bar is not None:
+            body.extend(
+                _scale_bar_svg(scale_bar[0], scale_bar[1], margin_mm, height)
+            )
+        if scale_text:
+            body.append(_scale_text_svg(scale_text, width, height, margin_mm))
+        body.append("  </g>")
+
     header = [
         '<svg xmlns="http://www.w3.org/2000/svg" '
         f'width="{_fmt(width)}mm" height="{_fmt(height)}mm" '
@@ -120,6 +140,43 @@ def to_svg(
         )
 
     return "\n".join(header + body + ["</svg>", ""])
+
+
+def _scale_bar_svg(total_mm, labels, x_mm, canvas_h_mm):
+    """Alternating black/white bar with a real-world label under each tick."""
+    total_mm = max(float(total_mm), 1e-6)
+    count = max(len(labels) - 1, 1)
+    seg = total_mm / count
+    bar_y = canvas_h_mm - _SCALE_BAR_SPACE_MM + 4.0
+    label_y = bar_y + _SCALE_BAR_H_MM + _SCALE_FONT_MM
+
+    parts = []
+    for i in range(count):
+        x = x_mm + i * seg
+        fill = _MONO if i % 2 == 0 else "#ffffff"
+        parts.append(
+            f'    <rect x="{_fmt(x)}" y="{_fmt(bar_y)}" width="{_fmt(seg)}" '
+            f'height="{_fmt(_SCALE_BAR_H_MM)}" fill="{fill}" stroke="{_MONO}" '
+            f'stroke-width="0.15" />'
+        )
+    for i, label in enumerate(labels):
+        x = x_mm + i * seg
+        anchor = "start" if i == 0 else "end" if i == count else "middle"
+        parts.append(
+            f'    <text x="{_fmt(x)}" y="{_fmt(label_y)}" '
+            f'font-size="{_fmt(_SCALE_FONT_MM)}" font-family="sans-serif" '
+            f'fill="{_MONO}" text-anchor="{anchor}">{escape(str(label))}</text>'
+        )
+    return parts
+
+
+def _scale_text_svg(text, canvas_w_mm, canvas_h_mm, margin_mm):
+    y = canvas_h_mm - _SCALE_BAR_SPACE_MM + 4.0 + _SCALE_BAR_H_MM
+    return (
+        f'    <text x="{_fmt(canvas_w_mm - margin_mm)}" y="{_fmt(y)}" '
+        f'font-size="{_fmt(_SCALE_FONT_MM)}" font-family="sans-serif" '
+        f'fill="{_MONO}" text-anchor="end">{escape(str(text))}</text>'
+    )
 
 
 def _leader_svg(leader, place, font_mm, gap_mm, shelf_mm, stroke_for):

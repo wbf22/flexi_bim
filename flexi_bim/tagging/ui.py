@@ -143,6 +143,7 @@ class _Sidebar:
 
 class FLEXIBIM_PT_apply(_Sidebar, bpy.types.Panel):
     bl_label = "Object Tags"
+    bl_description = "Tags applied to the active object"
     bl_idname = "FLEXIBIM_PT_apply"
     bl_parent_id = "FLEXIBIM_PT_main"
 
@@ -174,6 +175,7 @@ class FLEXIBIM_PT_apply(_Sidebar, bpy.types.Panel):
 
 class FLEXIBIM_PT_tags(_Sidebar, bpy.types.Panel):
     bl_label = "Tags"
+    bl_description = "Project-wide tag registry: create, edit and cost tags"
     bl_idname = "FLEXIBIM_PT_tags"
     bl_parent_id = "FLEXIBIM_PT_main"
     bl_options = {"DEFAULT_CLOSED"}
@@ -219,6 +221,7 @@ class FLEXIBIM_PT_tags(_Sidebar, bpy.types.Panel):
 
 class FLEXIBIM_PT_costs(_Sidebar, bpy.types.Panel):
     bl_label = "Cost Summary"
+    bl_description = "Totals for every tag; toggle selected-only from the header"
     bl_idname = "FLEXIBIM_PT_costs"
     bl_parent_id = "FLEXIBIM_PT_main"
     bl_options = {"DEFAULT_CLOSED"}
@@ -294,6 +297,7 @@ class FLEXIBIM_PT_costs(_Sidebar, bpy.types.Panel):
 
 class FLEXIBIM_PT_project(_Sidebar, bpy.types.Panel):
     bl_label = "Project Settings"
+    bl_description = "Currency, quantity units, model stats and import/export tools"
     bl_idname = "FLEXIBIM_PT_project"
     bl_parent_id = "FLEXIBIM_PT_main"
     bl_options = {"DEFAULT_CLOSED"}
