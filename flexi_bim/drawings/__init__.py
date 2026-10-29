@@ -17,7 +17,7 @@ Saved views (create/edit them in the **Drawings** sidebar panel) live on
 from __future__ import annotations
 
 from ..core.registration import register_classes, unregister_classes
-from . import extract, operators, primitives, props, svg, ui, views
+from . import dimensions, extract, operators, primitives, props, svg, ui, views
 
 classes = props.classes + operators.classes + ui.classes
 
@@ -50,6 +50,7 @@ def unregister():
 
 
 __all__ = [
+    "dimensions",
     "extract",
     "operators",
     "primitives",

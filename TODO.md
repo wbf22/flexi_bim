@@ -40,6 +40,10 @@ Three coexisting modeling levels:
 - **Drawings** sidebar panel: create/edit/duplicate views (axis, direction,
   mode, cut level, range, tag picker, categories, scale, notes) and generate
   SVG to the output folder or export via a file dialog
+- **Measurements** (Phase 4 v1): per-view **gap dimensions** between two
+  selected objects — nearest-face distance measured in the view plane (Z view
+  → XY, etc.), drawn on the `A-DIMS` layer with extension lines, 45° ticks and
+  a length label. Verified headless
 
 ## Tooling
 - [ ] Test suite + `tests/mockbpy`
@@ -77,8 +81,9 @@ Three coexisting modeling levels:
 - [ ] Clean SVG/DXF vector export
 
 ## Phase 4 — Dimensions & Annotations
-- [ ] Linear dimension tool (associative, updates with geometry)
-- [ ] Dimension chains for layout
+- [x] Linear dimension tool (v1: manual gap between two objects, per view,
+      associative — re-projects on regenerate; measured in the view plane)
+- [ ] Dimension chains for layout (auto: features along the run axis + overall)
 - [ ] Room name + area labels (boundary recognition)
 - [ ] Text notes / leader annotations
 

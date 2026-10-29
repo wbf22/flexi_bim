@@ -110,13 +110,20 @@ class FLEXIBIM_OT_view_duplicate(bpy.types.Operator):
         if source is None:
             return {"CANCELLED"}
         target = data.views.add()
-        for field in ("axis", "projection", "mode", "cut_level", "use_range",
+        for field in ("axis", "direction", "mode", "cut_level", "use_range",
                       "range_min", "range_max", "contained", "categories",
                       "tag_match", "notes", "scale"):
             setattr(target, field, getattr(source, field))
         target.name = source.name + " copy"
         for tag in source.include_tags:
             target.include_tags.add().name = tag.name
+        for measurement in source.measurements:
+            copy = target.measurements.add()
+            copy.object_a = measurement.object_a
+            copy.object_b = measurement.object_b
+            copy.offset = measurement.offset
+            copy.decimals = measurement.decimals
+            copy.include = measurement.include
         data.active_view_index = len(data.views) - 1
         return {"FINISHED"}
 
@@ -159,6 +166,55 @@ class FLEXIBIM_OT_view_tag_remove(bpy.types.Operator):
             return {"CANCELLED"}
         view.include_tags.remove(index)
         view.active_tag_index = min(max(0, index - 1), max(0, len(view.include_tags) - 1))
+        return {"FINISHED"}
+
+
+# ---------------------------------------------------------------------------
+# Measurements
+# ---------------------------------------------------------------------------
+
+class FLEXIBIM_OT_measure_add(bpy.types.Operator):
+    bl_idname = "flexibim.measure_add"
+    bl_label = "Add Measurement"
+    bl_description = "Measure the gap between the two selected objects"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return _active_view(context) is not None
+
+    def execute(self, context):
+        view = _active_view(context)
+        selected = list(context.selected_objects)
+        if len(selected) != 2:
+            self.report({"WARNING"}, "Select exactly two objects to measure between")
+            return {"CANCELLED"}
+        measurement = view.measurements.add()
+        measurement.object_a = selected[0].name
+        measurement.object_b = selected[1].name
+        view.active_measurement_index = len(view.measurements) - 1
+        return {"FINISHED"}
+
+
+class FLEXIBIM_OT_measure_remove(bpy.types.Operator):
+    bl_idname = "flexibim.measure_remove"
+    bl_label = "Remove Measurement"
+    bl_description = "Delete the selected measurement"
+    bl_options = {"REGISTER", "UNDO"}
+
+    index: IntProperty(name="Index", default=-1)
+
+    def execute(self, context):
+        view = _active_view(context)
+        if view is None:
+            return {"CANCELLED"}
+        index = self.index if self.index >= 0 else view.active_measurement_index
+        if not (0 <= index < len(view.measurements)):
+            return {"CANCELLED"}
+        view.measurements.remove(index)
+        view.active_measurement_index = min(
+            max(0, index - 1), max(0, len(view.measurements) - 1)
+        )
         return {"FINISHED"}
 
 
@@ -237,6 +293,8 @@ classes = (
     FLEXIBIM_OT_view_duplicate,
     FLEXIBIM_OT_view_tag_add,
     FLEXIBIM_OT_view_tag_remove,
+    FLEXIBIM_OT_measure_add,
+    FLEXIBIM_OT_measure_remove,
     FLEXIBIM_OT_drawing_generate,
     FLEXIBIM_OT_drawing_export,
 )

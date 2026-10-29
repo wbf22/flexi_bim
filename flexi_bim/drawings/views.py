@@ -11,20 +11,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..tagging import api, measure
-from . import extract
+from . import dimensions, extract
 from . import primitives as P
 
 AXES = ("X", "Y", "Z")
-PROJECTIONS = ("+", "-")
+#: Look direction relative to the plane normal: "-" looks against the axis,
+#: "+" looks along it (the mirror image).
+DIRECTIONS = ("-", "+")
 MODES = (P.CUT, P.PROJECT)
 
 
 @dataclass
 class ViewSpec:
-    """A single drawing view: axis + range + tag filter."""
+    """A single drawing view.
+
+    ``axis`` selects the **plane** (Z -> XY cross section, Y -> XZ, X -> YZ) and
+    ``direction`` picks which side you look from along that normal.
+    """
 
     axis: str = "Z"
-    projection: str = "-"
+    direction: str = "-"
     mode: str = P.CUT
     #: Where to bisect (CUT only).  ``None`` uses the middle of the range.
     cut_level: float = None
@@ -40,6 +46,19 @@ class ViewSpec:
     notes: bool = True
     #: Drawing scale denominator (1:50 -> 50).
     scale: float = 50.0
+    #: Linear measurements between pairs of objects.
+    measurements: tuple = ()
+
+
+@dataclass
+class MeasurementSpec:
+    """A saved gap measurement between two objects."""
+
+    object_a: str
+    object_b: str
+    offset: float = 0.3
+    decimals: int = 2
+    include: bool = True
 
 
 @dataclass
@@ -72,7 +91,7 @@ def spec_from_view(view) -> ViewSpec:
     """Build a :class:`ViewSpec` from a stored ``FlexiBIMView`` property group."""
     return ViewSpec(
         axis=view.axis,
-        projection=view.projection,
+        direction=view.direction,
         mode=view.mode,
         cut_level=view.cut_level,
         range=(view.range_min, view.range_max) if view.use_range else None,
@@ -84,6 +103,16 @@ def spec_from_view(view) -> ViewSpec:
         contained=view.contained,
         notes=view.notes,
         scale=view.scale,
+        measurements=tuple(
+            MeasurementSpec(
+                object_a=m.object_a,
+                object_b=m.object_b,
+                offset=m.offset,
+                decimals=m.decimals,
+                include=m.include,
+            )
+            for m in getattr(view, "measurements", ())
+        ),
     )
 
 
@@ -141,6 +170,57 @@ def build_sources(scene, view, context=None):
     return sources
 
 
+def _projected_segments(geometry, axis, direction):
+    vertices, polygons, edges = geometry
+    segments = extract.project_segments(vertices, edges, axis, direction)
+    if not segments:
+        for polygon in polygons:
+            for i in range(len(polygon)):
+                a = extract._project(vertices[polygon[i]], axis, direction)
+                b = extract._project(vertices[polygon[(i + 1) % len(polygon)]], axis, direction)
+                if a != b:
+                    segments.append((a, b))
+    return segments
+
+
+def build_measurements(scene, view, context=None):
+    """Resolve the view's measurements into :class:`Dimension` primitives."""
+    specs = getattr(view, "measurements", ())
+    if not specs:
+        return []
+    depsgraph = measure.depsgraph_for(context)
+    cache = {}
+
+    def segments_for(name):
+        if name not in cache:
+            obj = scene.objects.get(name)
+            geometry = measure.world_geometry(obj, depsgraph) if obj is not None else None
+            cache[name] = (
+                _projected_segments(geometry, view.axis, view.direction) if geometry else None
+            )
+        return cache[name]
+
+    result = []
+    for measurement in specs:
+        if not getattr(measurement, "include", True):
+            continue
+        segments_a = segments_for(measurement.object_a)
+        segments_b = segments_for(measurement.object_b)
+        pair = dimensions.nearest_pair(segments_a, segments_b)
+        if pair is None:
+            continue
+        dimension = dimensions.dimension_for(
+            pair[0], pair[1],
+            offset=getattr(measurement, "offset", 0.3),
+            decimals=getattr(measurement, "decimals", 2),
+        )
+        if dimension is not None:
+            result.append(dimension)
+    return result
+
+
 def render(scene, view, context=None) -> P.Drawing:
     """Extract a :class:`Drawing` for ``view`` from ``scene``."""
-    return extract.extract_view(view, build_sources(scene, view, context))
+    drawing = extract.extract_view(view, build_sources(scene, view, context))
+    drawing.dimensions = build_measurements(scene, view, context)
+    return drawing

@@ -33,6 +33,63 @@ class FLEXIBIM_UL_view_tags(bpy.types.UIList):
             layout.label(text=item.name)
 
 
+class FLEXIBIM_UL_measurements(bpy.types.UIList):
+    """Measurements on the active view."""
+
+    def draw_item(self, context, layout, data, item, icon, active_data,
+                  active_propname, index=0, flt_flag=0):
+        if self.layout_type in {"DEFAULT", "COMPACT"}:
+            row = layout.row(align=True)
+            row.label(text=item.object_a or "?", icon="DRIVER_DISTANCE")
+            row.label(text="\u2194")
+            row.label(text=item.object_b or "?")
+            if not item.include:
+                row.label(text="", icon="HIDE_ON")
+        else:
+            layout.label(text=f"{item.object_a} \u2194 {item.object_b}")
+
+
+class FLEXIBIM_PT_measurements(bpy.types.Panel):
+    bl_label = "Measurements"
+    bl_idname = "FLEXIBIM_PT_measurements"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = PANEL_CATEGORY
+    bl_parent_id = "FLEXIBIM_PT_main"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        layout = self.layout
+        data = getattr(context.scene, "flexibim_drawings", None)
+        view = data.active_view if data is not None else None
+        if view is None:
+            layout.label(text="No active view", icon="INFO")
+            return
+
+        row = layout.row()
+        row.template_list(
+            "FLEXIBIM_UL_measurements", "",
+            view, "measurements",
+            view, "active_measurement_index",
+            rows=max(2, min(len(view.measurements), 6)),
+        )
+        side = row.column(align=True)
+        side.operator("flexibim.measure_add", icon="ADD", text="")
+        side.operator("flexibim.measure_remove", icon="REMOVE", text="")
+
+        measurement = view.active_measurement
+        if measurement is not None:
+            column = layout.column(align=True)
+            column.prop(measurement, "object_a")
+            column.prop(measurement, "object_b")
+            row = column.row(align=True)
+            row.prop(measurement, "offset")
+            row.prop(measurement, "decimals")
+            column.prop(measurement, "include")
+
+        layout.label(text="Select two objects, then Add", icon="INFO")
+
+
 class FLEXIBIM_PT_drawings(bpy.types.Panel):
     bl_label = "Drawings"
     bl_idname = "FLEXIBIM_PT_drawings"
@@ -72,7 +129,7 @@ class FLEXIBIM_PT_drawings(bpy.types.Panel):
         column.prop(view, "name")
         row = column.row(align=True)
         row.prop(view, "axis")
-        row.prop(view, "projection")
+        row.prop(view, "direction")
         column.prop(view, "mode")
         if view.mode == "CUT":
             column.prop(view, "cut_level")
@@ -118,5 +175,7 @@ class FLEXIBIM_PT_drawings(bpy.types.Panel):
 classes = (
     FLEXIBIM_UL_views,
     FLEXIBIM_UL_view_tags,
+    FLEXIBIM_UL_measurements,
     FLEXIBIM_PT_drawings,
+    FLEXIBIM_PT_measurements,
 )

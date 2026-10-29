@@ -26,14 +26,33 @@ from bpy.props import (
 from bpy.types import PropertyGroup
 
 _AXIS_ITEMS = [
-    ("X", "X", "Look along the X axis (side view)", 0),
-    ("Y", "Y", "Look along the Y axis (front/back view)", 1),
-    ("Z", "Z", "Look along the Z axis (plan)", 2),
+    ("X", "X", "YZ plane - side view", 0),
+    ("Y", "Y", "XZ plane - front/back view", 1),
+    ("Z", "Z", "XY plane - plan", 2),
 ]
-_PROJECTION_ITEMS = [
-    ("-", "Down / Front", "Look along the negative axis", 0),
-    ("+", "Up / Back", "Look along the positive axis", 1),
-]
+#: The two look directions that make sense for each plane normal.
+_DIRECTIONS = {
+    "X": [
+        ("-", "Looking left (X-)", "Left elevation, looking toward -X", 0),
+        ("+", "Looking right (X+)", "Right elevation, looking toward +X", 1),
+    ],
+    "Y": [
+        ("-", "Looking forward (Y-)", "Front elevation, looking toward -Y", 0),
+        ("+", "Looking backward (Y+)", "Back elevation, looking toward +Y", 1),
+    ],
+    "Z": [
+        ("-", "Looking down (Z-)", "Plan, looking down at the XY plane", 0),
+        ("+", "Looking up (Z+)", "Reflected ceiling plan, looking up", 1),
+    ],
+}
+_direction_cache = {}
+
+
+def _direction_items(self, context):
+    """Only offer the look directions that apply to the view's plane."""
+    items = _DIRECTIONS.get(getattr(self, "axis", "Z"), _DIRECTIONS["Z"])
+    _direction_cache["items"] = items
+    return items
 _MODE_ITEMS = [
     ("CUT", "Cut", "Section through the model at the cut level", 0),
     ("PROJECT", "Project", "Look through the band, no cutting", 1),
@@ -50,12 +69,30 @@ class FlexiBIMViewTag(PropertyGroup):
     name: StringProperty(name="Tag", default="")
 
 
+class FlexiBIMMeasurement(PropertyGroup):
+    """A gap measurement between two objects, drawn on this view."""
+
+    object_a: StringProperty(name="Object A", default="")
+    object_b: StringProperty(name="Object B", default="")
+    offset: FloatProperty(
+        name="Offset",
+        description="Distance from the geometry to the dimension line (model units)",
+        default=0.3,
+    )
+    decimals: IntProperty(name="Decimals", default=2, min=0, max=4)
+    include: BoolProperty(name="Show", default=True)
+
+
 class FlexiBIMView(PropertyGroup):
     """A saved drawing view."""
 
     name: StringProperty(name="Name", default="New View")
     axis: EnumProperty(name="Axis", items=_AXIS_ITEMS, default="Z")
-    projection: EnumProperty(name="Direction", items=_PROJECTION_ITEMS, default="-")
+    direction: EnumProperty(
+        name="View",
+        description="Which side of the plane to look from",
+        items=_direction_items,
+    )
     mode: EnumProperty(name="Mode", items=_MODE_ITEMS, default="CUT")
     cut_level: FloatProperty(
         name="Cut Level",
@@ -97,6 +134,15 @@ class FlexiBIMView(PropertyGroup):
         min=1.0,
     )
 
+    measurements: CollectionProperty(type=FlexiBIMMeasurement)
+    active_measurement_index: IntProperty(name="Active Measurement", default=0, min=0)
+
+    @property
+    def active_measurement(self):
+        if 0 <= self.active_measurement_index < len(self.measurements):
+            return self.measurements[self.active_measurement_index]
+        return None
+
 
 class FlexiBIMDrawings(PropertyGroup):
     """Scene-level drawing data (``scene.flexibim_drawings``)."""
@@ -119,6 +165,7 @@ class FlexiBIMDrawings(PropertyGroup):
 
 classes = (
     FlexiBIMViewTag,
+    FlexiBIMMeasurement,
     FlexiBIMView,
     FlexiBIMDrawings,
 )

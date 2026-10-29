@@ -26,11 +26,13 @@ _TOL = 1e-6
 # Projection helpers
 # ---------------------------------------------------------------------------
 
-def _project(point, axis, projection):
+def _project(point, axis, direction):
     u_axis, v_axis = _UV[axis]
     u = point[0] * u_axis[0] + point[1] * u_axis[1] + point[2] * u_axis[2]
     v = point[0] * v_axis[0] + point[1] * v_axis[1] + point[2] * v_axis[2]
-    if projection == "+":
+    if direction == "+":
+        # Looking the other way flips the drawing horizontally (front vs back,
+        # floor plan vs reflected ceiling plan).
         u = -u
     return (round(u, 4), round(v, 4))
 
@@ -45,7 +47,7 @@ def depth_span(vertices, axis):
     return (min(depths), max(depths)) if depths else (0.0, 0.0)
 
 
-def anchor_point(vertices, axis, projection):
+def anchor_point(vertices, axis, direction):
     """Projected centroid of ``vertices`` - where a leader arrow points."""
     if not vertices:
         return (0.0, 0.0)
@@ -55,7 +57,7 @@ def anchor_point(vertices, axis, projection):
         sum(v[1] for v in vertices) / n,
         sum(v[2] for v in vertices) / n,
     )
-    return _project(centroid, axis, projection)
+    return _project(centroid, axis, direction)
 
 
 def _within(span, lo, hi, contained):
@@ -89,7 +91,7 @@ def _unique(points):
     return out
 
 
-def cut_segments(vertices, polygons, axis, level, projection):
+def cut_segments(vertices, polygons, axis, level, direction):
     """Cross-section of ``polygons`` at ``level`` -> 2D ``(a, b)`` pairs."""
     idx = _AXIS_INDEX[axis]
     result = []
@@ -110,21 +112,21 @@ def cut_segments(vertices, polygons, axis, level, projection):
                     hits.append(tuple(p0[j] + t * (p1[j] - p0[j]) for j in range(3)))
             hits = _unique(hits)
             if len(hits) >= 2:
-                a = _project(hits[0], axis, projection)
-                b = _project(hits[1], axis, projection)
+                a = _project(hits[0], axis, direction)
+                b = _project(hits[1], axis, direction)
                 if a != b:
                     result.append((a, b))
     return result
 
 
-def project_segments(vertices, edges, axis, projection):
+def project_segments(vertices, edges, axis, direction):
     """Every edge projected onto the view plane -> 2D ``(a, b)`` pairs."""
     result = []
     for edge in edges:
         if len(edge) < 2:
             continue
-        a = _project(vertices[edge[0]], axis, projection)
-        b = _project(vertices[edge[1]], axis, projection)
+        a = _project(vertices[edge[0]], axis, direction)
+        b = _project(vertices[edge[1]], axis, direction)
         if a != b:
             result.append((a, b))
     return result
@@ -168,10 +170,10 @@ def extract_view(view, sources) -> P.Drawing:
             level = view.cut_level
             if level is None:
                 level = (span[0] + span[1]) / 2.0
-            pairs = cut_segments(source.vertices, source.polygons, view.axis, level, view.projection)
+            pairs = cut_segments(source.vertices, source.polygons, view.axis, level, view.direction)
             weight, kind = P.WEIGHT_CUT, P.CUT
         else:
-            pairs = project_segments(source.vertices, source.edges, view.axis, view.projection)
+            pairs = project_segments(source.vertices, source.edges, view.axis, view.direction)
             weight, kind = P.WEIGHT_PROJECT, P.PROJECT
 
         for a, b in pairs:
@@ -181,7 +183,7 @@ def extract_view(view, sources) -> P.Drawing:
             )
 
         if view.notes and pairs:
-            anchor = anchor_point(source.vertices, view.axis, view.projection)
+            anchor = anchor_point(source.vertices, view.axis, view.direction)
             for info in source.tags:
                 key = info.name.strip().lower()
                 if not info.note or key in noted:
