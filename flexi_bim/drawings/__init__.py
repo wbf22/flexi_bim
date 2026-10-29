@@ -8,14 +8,18 @@ Extract 2D views from tagged geometry and export them as vector linework::
                           include_tags=("Downlight",))
     drawing = views.render(scene, view)
     svg.write("out/lighting.svg", drawing)
+
+Saved views (create/edit them in the **Drawings** sidebar panel) live on
+``scene.flexibim_drawings`` and are turned into a :class:`views.ViewSpec` with
+:func:`views.spec_from_view`.
 """
 
 from __future__ import annotations
 
 from ..core.registration import register_classes, unregister_classes
-from . import extract, primitives, svg, views
+from . import extract, operators, primitives, props, svg, ui, views
 
-classes = ()
+classes = props.classes + operators.classes + ui.classes
 
 
 def render(scene, view, context=None):
@@ -37,16 +41,21 @@ def write_svg(path, scene, view, context=None, **kwargs):
 
 def register():
     register_classes(classes)
+    props.register_pointers()
 
 
 def unregister():
+    props.unregister_pointers()
     unregister_classes(classes)
 
 
 __all__ = [
     "extract",
+    "operators",
     "primitives",
+    "props",
     "svg",
+    "ui",
     "views",
     "render",
     "render_svg",

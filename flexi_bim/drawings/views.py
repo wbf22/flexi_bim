@@ -68,6 +68,25 @@ class Source:
         return self.tags[0] if self.tags else None
 
 
+def spec_from_view(view) -> ViewSpec:
+    """Build a :class:`ViewSpec` from a stored ``FlexiBIMView`` property group."""
+    return ViewSpec(
+        axis=view.axis,
+        projection=view.projection,
+        mode=view.mode,
+        cut_level=view.cut_level,
+        range=(view.range_min, view.range_max) if view.use_range else None,
+        include_tags=tuple(t.name for t in view.include_tags if t.name.strip()),
+        categories=tuple(
+            c.strip() for c in (view.categories or "").split(",") if c.strip()
+        ),
+        tag_match=view.tag_match,
+        contained=view.contained,
+        notes=view.notes,
+        scale=view.scale,
+    )
+
+
 def _tag_color(tag):
     try:
         color = tuple(float(c) for c in tag.color)

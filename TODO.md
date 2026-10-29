@@ -37,6 +37,9 @@ Three coexisting modeling levels:
 - Drawing engine v1 (`drawings/`): `ViewSpec` selects by **axis + range + tag
   filter**; CUT (bisect) and PROJECT extraction; tag-coloured SVG export with
   leader notes. Verified headless (plan cut + filtered lighting plan)
+- **Drawings** sidebar panel: create/edit/duplicate views (axis, direction,
+  mode, cut level, range, tag picker, categories, scale, notes) and generate
+  SVG to the output folder or export via a file dialog
 
 ## Tooling
 - [ ] Test suite + `tests/mockbpy`
@@ -63,7 +66,7 @@ Three coexisting modeling levels:
 - [ ] Generate elevation views (4 sides)
 - [ ] Generate section cuts (bisect/clip plane through model)
 - [ ] Cut-line weight (thick) vs. elements behind cut (light)
-- [ ] Vector line output via custom geometry extraction
+- [x] Vector line output via custom geometry extraction (SVG; DXF next)
 - [ ] View regenerate without destroying manual edits
 
 ## Phase 3 — Architectural Linework
