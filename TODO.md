@@ -34,6 +34,9 @@ Three coexisting modeling levels:
 - Restored `tagging/measure.py` (had been overwritten by a copy of `exchange.py`)
 - Root sidebar panel wired into `ui/panel.py`; orphaned `tagging/panel.py` removed
 - All FlexiBIM panels verified to draw without error on Blender 4.4.3
+- Drawing engine v1 (`drawings/`): `ViewSpec` selects by **axis + range + tag
+  filter**; CUT (bisect) and PROJECT extraction; tag-coloured SVG export with
+  leader notes. Verified headless (plan cut + filtered lighting plan)
 
 ## Tooling
 - [ ] Test suite + `tests/mockbpy`

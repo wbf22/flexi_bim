@@ -115,7 +115,7 @@ right of each row shows how many objects currently use the tag.
 
 | Panel | What it does |
 |---|---|
-| **Object Tags** | The active object's applied tags, a menu to apply a registry tag, and remove/reorder |
+| **Object Tags** | The active object's applied tags; a menu to apply a registry tag (or create a new one on the spot), plus remove/reorder |
 | **Tags** | Manage the tag registry: create, duplicate and delete tags, and edit their category, colour, cost and custom properties |
 | **Cost Summary** | Per-tag or per-object rollup, whole scene or selection only, CSV export |
 | **Project Settings** | Currency, quantity units, tagged/untagged counts, JSON import/export |

@@ -21,6 +21,9 @@ _enum_cache = {}
 #: An empty identifier is not safe to hand to RNA, so use a reserved one.
 EMPTY_ENUM = "__FLEXIBIM_EMPTY__"
 
+#: Sentinel entry in the apply menu that opens the "create tag" dialog instead.
+NEW_ENUM = "__FLEXIBIM_NEW__"
+
 
 def _tag_enum_items(self, context):
     scene = getattr(context, "scene", None)
@@ -29,9 +32,10 @@ def _tag_enum_items(self, context):
         name = entry.name or "(unnamed)"
         items.append((name, name, entry.description or "Project tag", index))
     if not items:
-        items = [
-            (EMPTY_ENUM, "No tags yet", "Create one in the Tags panel", 0)
-        ]
+        items.append((EMPTY_ENUM, "No tags yet", "No tags in the project yet", 0))
+    items.append(
+        (NEW_ENUM, "New Tag...", "Create a new tag and apply it", len(items))
+    )
     _enum_cache["tags"] = items
     return items
 
@@ -92,6 +96,10 @@ class FLEXIBIM_OT_tag_apply(_TagOperator, bpy.types.Operator):
 
     def execute(self, context):
         name = self.name
+        if name == NEW_ENUM:
+            return bpy.ops.flexibim.tag_create(
+                "INVOKE_DEFAULT", apply=self.apply_to_selected
+            )
         if not name or name == EMPTY_ENUM:
             self.report({"WARNING"}, "There are no tags yet")
             return {"CANCELLED"}
@@ -202,6 +210,11 @@ class FLEXIBIM_OT_tag_create(bpy.types.Operator):
     name: StringProperty(name="Name", default="New Tag")
     category: EnumProperty(name="Category", items=C.CATEGORY_ITEMS, default="NONE")
     description: StringProperty(name="Description", default="")
+    apply: BoolProperty(
+        name="Apply to Selection",
+        description="Apply the new tag to the selected objects",
+        default=False,
+    )
 
     def execute(self, context):
         entry = api.create_tag(
@@ -210,6 +223,14 @@ class FLEXIBIM_OT_tag_create(bpy.types.Operator):
         )
         if entry is None:
             return {"CANCELLED"}
+        if self.apply:
+            targets = _selected(context)
+            for obj in targets:
+                api.apply_tag(obj, entry.name)
+            self.report(
+                {"INFO"}, f"Created '{entry.name}' and applied it to {len(targets)} object(s)"
+            )
+            return {"FINISHED"}
         self.report({"INFO"}, f"Created tag '{entry.name}'")
         return {"FINISHED"}
 

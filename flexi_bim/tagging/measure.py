@@ -127,6 +127,15 @@ def _world_geometry(obj, depsgraph=None):
     return vertices, polygons, edges
 
 
+def world_geometry(obj, depsgraph=None):
+    """Public accessor for world-space ``(vertices, polygons, edges)``.
+
+    Used by the drawing extractor.  Returns ``None`` when the object has no
+    geometry we can pull out.
+    """
+    return _world_geometry(obj, depsgraph)
+
+
 def measure_object(obj, depsgraph=None, use_cache=True):
     """Take off every quantity for ``obj``; ``None`` if it has no geometry."""
     if obj is None:

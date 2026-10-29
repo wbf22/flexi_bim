@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="123mm" height="38mm" viewBox="0 0 123 38">
+  <title>Lighting Plan</title>
+  <g id="A-FIXT">
+    <line x1="60" y1="10" x2="60" y2="18" stroke="#f2991a" stroke-width="0.18" stroke-linecap="round" />
+    <line x1="68" y1="10" x2="60" y2="10" stroke="#f2991a" stroke-width="0.18" stroke-linecap="round" />
+    <line x1="68" y1="18" x2="68" y2="10" stroke="#f2991a" stroke-width="0.18" stroke-linecap="round" />
+    <line x1="60" y1="18" x2="68" y2="18" stroke="#f2991a" stroke-width="0.18" stroke-linecap="round" />
+    <line x1="10" y1="20" x2="10" y2="28" stroke="#f2991a" stroke-width="0.18" stroke-linecap="round" />
+    <line x1="18" y1="20" x2="10" y2="20" stroke="#f2991a" stroke-width="0.18" stroke-linecap="round" />
+    <line x1="18" y1="28" x2="18" y2="20" stroke="#f2991a" stroke-width="0.18" stroke-linecap="round" />
+    <line x1="10" y1="28" x2="18" y2="28" stroke="#f2991a" stroke-width="0.18" stroke-linecap="round" />
+  </g>
+  <g id="A-ANNO">
+    <polyline points="64,14 70,8 75,8" fill="none" stroke="#f2991a" stroke-width="0.13" />
+    <polygon points="64,14 65.061,11.525 66.475,12.939" fill="#f2991a" />
+    <text x="76.5" y="8" font-size="2.5" font-family="sans-serif" fill="#f2991a" dominant-baseline="central">Recessed LED downlight</text>
+  </g>
+</svg>
