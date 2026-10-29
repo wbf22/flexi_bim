@@ -123,3 +123,26 @@ def dimension_for(pa, pb, offset=0.3, decimals=2, color=P.DEFAULT_COLOR,
         offset=offset,
         color=color,
     )
+
+
+def dimensions_for(pa, pb, offset=0.3, decimals=2, color=P.DEFAULT_COLOR,
+                   formatter=None, tol=1e-4):
+    """Dimensions between two nearest points, as a list.
+
+    When the points are lined up on a view axis (same X or same Y) this is a
+    single bar.  Otherwise a diagonal bar would be misleading, so two bars are
+    returned instead: the horizontal and the vertical change in the view plane,
+    meeting at the corner ``(pb.x, pa.y)``.
+    """
+    dx = pb[0] - pa[0]
+    dy = pb[1] - pa[1]
+    if abs(dx) <= tol or abs(dy) <= tol:
+        single = dimension_for(pa, pb, offset, decimals, color, formatter)
+        return [single] if single is not None else []
+    corner = (pb[0], pa[1])
+    result = []
+    for start, end in ((pa, corner), (corner, pb)):
+        dim = dimension_for(start, end, offset, decimals, color, formatter)
+        if dim is not None:
+            result.append(dim)
+    return result

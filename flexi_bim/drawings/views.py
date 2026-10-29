@@ -8,6 +8,7 @@ the matching tagged geometry; :func:`render` runs the extractor over it.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from ..core import units
@@ -248,14 +249,12 @@ def build_measurements(scene, view, context=None):
         pair = dimensions.nearest_pair(segments_a, segments_b)
         if pair is None:
             continue
-        dimension = dimensions.dimension_for(
+        result.extend(dimensions.dimensions_for(
             pair[0], pair[1],
             offset=getattr(measurement, "offset", 0.3),
             decimals=getattr(measurement, "decimals", 2),
             formatter=length_formatter(getattr(measurement, "decimals", 2)),
-        )
-        if dimension is not None:
-            result.append(dimension)
+        ))
     return result
 
 
@@ -272,25 +271,42 @@ def paper_scale(scene) -> float:
     return api.unit_context(scene).scale_length * 1000.0
 
 
-def scale_bar(scene, view, total_mm=50.0, divisions=5):
+def _nice_floor(value):
+    """Largest 1/2/5 x 10^n not above ``value`` (``value`` > 0)."""
+    exponent = math.floor(math.log10(value))
+    base = 10.0 ** exponent
+    for step in (5.0, 2.0, 1.0):
+        if step * base <= value * (1 + 1e-9):
+            return step * base
+    return base
+
+
+def scale_bar(scene, view, total_mm=50.0, divisions=None):
     """A graphic scale bar for ``view`` as ``(total_mm, labels)``.
 
-    ``labels`` runs from 0 up to the real-world length the bar represents,
-    already formatted in the project's units.
+    The bar represents a round real-world length (1, 2, 5 x 10^n project
+    units) no longer than ``total_mm`` on paper, so labels stay short and
+    evenly spaced.  Only the last label carries the unit suffix.
     """
     ctx = api.unit_context(scene)
     units_per_model = paper_scale(scene)
     project_per_model = ctx.factor(units.DIMENSION_LENGTH)
     denominator = max(float(view.scale), 1e-9)
     mm_per_project = units_per_model / (project_per_model * denominator)
-    total_value = (total_mm / mm_per_project) if mm_per_project else 0.0
-    labels = [
-        units.format_quantity(
-            total_value * i / divisions, units.DIMENSION_LENGTH, ctx, precision=2
-        )
-        for i in range(divisions + 1)
-    ]
-    return total_mm, labels
+    if mm_per_project <= 0.0:
+        return total_mm, ["0"]
+    total_value = _nice_floor(total_mm / mm_per_project)
+    if divisions is None:
+        mantissa = total_value / 10.0 ** math.floor(math.log10(total_value))
+        divisions = 5 if round(mantissa) == 5 else 4
+    suffix = ctx.suffix(units.DIMENSION_LENGTH)
+    labels = []
+    for i in range(divisions + 1):
+        value = total_value * i / divisions
+        text = f"{value:,.3f}".rstrip("0").rstrip(".")
+        labels.append(text)
+    labels[-1] = f"{labels[-1]} {suffix}"
+    return total_value * mm_per_project, labels
 
 
 def render(scene, view, context=None) -> P.Drawing:

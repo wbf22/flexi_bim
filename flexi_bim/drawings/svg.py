@@ -18,7 +18,7 @@ _ARROW_MM = 2.5
 _TICK_MM = 2.0
 _EXTENSION_MM = 1.5
 _SCALE_BAR_H_MM = 2.0
-_SCALE_BAR_SPACE_MM = 14.0
+_SCALE_BAR_SPACE_MM = 18.0
 _SCALE_FONT_MM = 2.5
 
 
@@ -159,9 +159,17 @@ def _scale_bar_svg(total_mm, labels, x_mm, canvas_h_mm):
             f'height="{_fmt(_SCALE_BAR_H_MM)}" fill="{fill}" stroke="{_MONO}" '
             f'stroke-width="0.15" />'
         )
+    char_w = _SCALE_FONT_MM * 0.6
+    last_right = None
     for i, label in enumerate(labels):
         x = x_mm + i * seg
-        anchor = "start" if i == 0 else "end" if i == count else "middle"
+        w = len(str(label)) * char_w
+        left = x - w / 2.0
+        if last_right is not None and left < last_right + char_w / 2.0 \
+                and i != count:
+            continue
+        last_right = x + w / 2.0
+        anchor = "middle"
         parts.append(
             f'    <text x="{_fmt(x)}" y="{_fmt(label_y)}" '
             f'font-size="{_fmt(_SCALE_FONT_MM)}" font-family="sans-serif" '
@@ -171,11 +179,13 @@ def _scale_bar_svg(total_mm, labels, x_mm, canvas_h_mm):
 
 
 def _scale_text_svg(text, canvas_w_mm, canvas_h_mm, margin_mm):
-    y = canvas_h_mm - _SCALE_BAR_SPACE_MM + 4.0 + _SCALE_BAR_H_MM
+    # Own row below the bar labels so the two never overlap.
+    y = (canvas_h_mm - _SCALE_BAR_SPACE_MM + 4.0 + _SCALE_BAR_H_MM
+         + _SCALE_FONT_MM * 2 + 1.5)
     return (
-        f'    <text x="{_fmt(canvas_w_mm - margin_mm)}" y="{_fmt(y)}" '
+        f'    <text x="{_fmt(margin_mm)}" y="{_fmt(y)}" '
         f'font-size="{_fmt(_SCALE_FONT_MM)}" font-family="sans-serif" '
-        f'fill="{_MONO}" text-anchor="end">{escape(str(text))}</text>'
+        f'fill="{_MONO}" text-anchor="start">{escape(str(text))}</text>'
     )
 
 

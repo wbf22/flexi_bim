@@ -282,35 +282,6 @@ class FLEXIBIM_OT_measure_generate(bpy.types.Operator):
 # Export
 # ---------------------------------------------------------------------------
 
-class FLEXIBIM_OT_drawing_generate(bpy.types.Operator):
-    bl_idname = "flexibim.drawing_generate"
-    bl_label = "Generate SVG"
-    bl_description = "Render the selected view and write it to the output folder"
-    bl_options = {"REGISTER"}
-
-    @classmethod
-    def poll(cls, context):
-        return _active_view(context) is not None
-
-    def execute(self, context):
-        view = _active_view(context)
-        drawing = views.render(context.scene, views.spec_from_view(view), context)
-        path = _output_path(context, view.name)
-        try:
-            svg_module.write(path, drawing, **_svg_options(context.scene, view))
-        except OSError as error:
-            self.report({"ERROR"}, f"Could not write file: {error}")
-            return {"CANCELLED"}
-        if drawing.is_empty:
-            self.report({"WARNING"}, f"Nothing to draw; empty SVG written to {path}")
-        else:
-            self.report(
-                {"INFO"},
-                f"Wrote {len(drawing.segments)} segment(s) to {path}",
-            )
-        return {"FINISHED"}
-
-
 class FLEXIBIM_OT_drawing_export(bpy.types.Operator):
     bl_idname = "flexibim.drawing_export"
     bl_label = "Export SVG..."
@@ -327,9 +298,7 @@ class FLEXIBIM_OT_drawing_export(bpy.types.Operator):
     def invoke(self, context, event):
         view = _active_view(context)
         if not self.filepath:
-            blend = getattr(bpy.data, "filepath", "") or ""
-            base = blend.rsplit(".", 1)[0] if blend else "flexibim"
-            self.filepath = f"{base}_{_safe_filename(view.name)}.svg"
+            self.filepath = _output_path(context, view.name)
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
@@ -355,6 +324,5 @@ classes = (
     FLEXIBIM_OT_measure_add,
     FLEXIBIM_OT_measure_remove,
     FLEXIBIM_OT_measure_generate,
-    FLEXIBIM_OT_drawing_generate,
     FLEXIBIM_OT_drawing_export,
 )

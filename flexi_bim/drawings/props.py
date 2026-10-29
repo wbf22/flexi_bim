@@ -235,7 +235,7 @@ class FlexiBIMDrawings(PropertyGroup):
     active_view_index: IntProperty(name="Active View", default=0, min=0)
     output_dir: StringProperty(
         name="Output Folder",
-        description="Where Generate writes SVG files (empty = folder of the .blend)",
+        description="Default folder offered when exporting SVG files (empty = folder of the .blend)",
         subtype="DIR_PATH",
         default="",
     )
