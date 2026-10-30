@@ -15,12 +15,22 @@ CUT = "CUT"
 PROJECT = "PROJECT"
 HIDDEN = "HIDDEN"
 
+#: Fill pattern identifiers.  These strings are shared with the tag property
+#: (see ``tagging.constants.FILL_ITEMS``) and must stay in sync.
+FILL_NONE = "NONE"
+FILL_SOLID = "SOLID"
+FILL_DIAGONAL = "DIAGONAL"
+FILL_CROSS = "CROSS"
+FILL_DOTS = "DOTS"
+
 #: Default paper stroke widths in millimetres.
 WEIGHT_CUT = 0.50
 WEIGHT_PROJECT = 0.18
 WEIGHT_HIDDEN = 0.13
 WEIGHT_LEADER = 0.13
 WEIGHT_DIMENSION = 0.13
+#: Stroke width of vector hatch lines inside a fill pattern (paper mm).
+HATCH_WEIGHT = 0.13
 
 #: Layer used for everything with no semantic category, and for annotations.
 DEFAULT_LAYER = "0"
@@ -100,6 +110,25 @@ class Dimension:
     color: tuple = DEFAULT_COLOR
 
 
+@dataclass(frozen=True)
+class Region:
+    """A closed area filled with a repeating pattern (poché).
+
+    ``points`` is the polygon outline in view-plane coordinates (model units);
+    the outline is implicitly closed.  ``fill`` is one of the ``FILL_*``
+    identifiers, ``spacing`` is the tile size on paper (mm) and ``angle`` rotates
+    the hatch (degrees).
+    """
+
+    points: tuple
+    layer: str = DEFAULT_LAYER
+    color: tuple = DEFAULT_COLOR
+    fill: str = FILL_NONE
+    spacing: float = 3.0
+    angle: float = 45.0
+    tag: str = ""
+
+
 @dataclass
 class Drawing:
     """Everything the extractor produced for one view."""
@@ -107,12 +136,19 @@ class Drawing:
     segments: list = field(default_factory=list)
     leaders: list = field(default_factory=list)
     dimensions: list = field(default_factory=list)
+    regions: list = field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:
-        return not self.segments and not self.leaders and not self.dimensions
+        return (
+            not self.segments
+            and not self.leaders
+            and not self.dimensions
+            and not self.regions
+        )
 
     def layers(self):
         names = {segment.layer for segment in self.segments}
         names.update(dim.layer for dim in self.dimensions)
+        names.update(region.layer for region in self.regions)
         return sorted(names)

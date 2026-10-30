@@ -188,7 +188,7 @@ class FLEXIBIM_PT_drawing_filter(bpy.types.Panel):
 
 class FLEXIBIM_PT_drawing_output(bpy.types.Panel):
     bl_label = "Output"
-    bl_description = "Where SVGs are written, and the export button"
+    bl_description = "Export the active view as an SVG file"
     bl_idname = "FLEXIBIM_PT_drawing_output"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -197,11 +197,6 @@ class FLEXIBIM_PT_drawing_output(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        data = getattr(context.scene, "flexibim_drawings", None)
-        if data is None:
-            layout.label(text="FlexiBIM drawings not registered", icon="ERROR")
-            return
-        layout.prop(data, "output_dir", text="")
         layout.operator("flexibim.drawing_export", icon="EXPORT")
 
 

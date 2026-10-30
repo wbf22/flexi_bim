@@ -95,6 +95,9 @@ class TagInfo:
     category: str = "NONE"
     layer: str = P.DEFAULT_LAYER
     color: tuple = P.DEFAULT_COLOR
+    fill: str = P.FILL_NONE
+    fill_spacing: float = 3.0
+    fill_angle: float = 45.0
 
 
 @dataclass
@@ -187,6 +190,9 @@ def build_sources(scene, view, context=None):
                 category=d.category,
                 layer=P.layer_for(d.category),
                 color=_tag_color(d),
+                fill=getattr(d, "fill", P.FILL_NONE) or P.FILL_NONE,
+                fill_spacing=float(getattr(d, "fill_spacing", 3.0) or 3.0),
+                fill_angle=float(getattr(d, "fill_angle", 45.0) or 0.0),
             )
             for d in definitions
         )

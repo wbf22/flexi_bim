@@ -119,6 +119,65 @@ def cut_segments(vertices, polygons, axis, level, direction):
     return result
 
 
+def _quantize(point):
+    """Endpoint key for joining segments (matches :func:`_project` rounding)."""
+    return (round(point[0], 4), round(point[1], 4))
+
+
+def chain_loops(segments):
+    """Join 2D segments into closed loops; open chains are dropped.
+
+    Simple greedy walk - good for the watertight solids a section view usually
+    cuts.  Branches or non-manifold geometry may yield approximate loops.
+    """
+    edges = {}
+    adjacency = {}
+    seen = set()
+    for a, b in segments:
+        ka, kb = _quantize(a), _quantize(b)
+        if ka == kb:
+            continue
+        key = frozenset((ka, kb))
+        if key in seen:
+            continue
+        seen.add(key)
+        index = len(edges)
+        edges[index] = (ka, kb)
+        adjacency.setdefault(ka, []).append(index)
+        adjacency.setdefault(kb, []).append(index)
+
+    used = set()
+    loops = []
+    for first in range(len(edges)):
+        if first in used:
+            continue
+        loop = _walk_loop(first, edges, adjacency, used)
+        if loop is not None and len(loop) >= 3:
+            loops.append(tuple(loop))
+    return loops
+
+
+def _walk_loop(first, edges, adjacency, used):
+    start, current = edges[first]
+    used.add(first)
+    loop = [start, current]
+    while current != start:
+        candidates = [e for e in adjacency.get(current, ()) if e not in used]
+        if not candidates:
+            return None
+        nxt = candidates[0]
+        used.add(nxt)
+        a, b = edges[nxt]
+        current = b if a == current else a
+        loop.append(current)
+    return loop[:-1]
+
+
+def cut_loops(vertices, polygons, axis, level, direction):
+    """Closed cross-section outlines at ``level`` -> list of 2D point loops."""
+    return chain_loops(cut_segments(vertices, polygons, axis, level, direction))
+
+
 def project_segments(vertices, edges, axis, direction):
     """Every edge projected onto the view plane -> 2D ``(a, b)`` pairs."""
     result = []
@@ -154,6 +213,7 @@ def extract_view(view, sources) -> P.Drawing:
     lo, hi = view.range if view.range else (None, None)
     segments = []
     leaders = []
+    regions = []
     noted = set()
 
     for source in sources:
@@ -172,6 +232,13 @@ def extract_view(view, sources) -> P.Drawing:
                 level = (span[0] + span[1]) / 2.0
             pairs = cut_segments(source.vertices, source.polygons, view.axis, level, view.direction)
             weight, kind = P.WEIGHT_CUT, P.CUT
+            if primary is not None and primary.fill != P.FILL_NONE:
+                for loop in chain_loops(pairs):
+                    regions.append(
+                        P.Region(points=loop, layer=layer, color=color,
+                                 fill=primary.fill, spacing=primary.fill_spacing,
+                                 angle=primary.fill_angle, tag=tag_name)
+                    )
         else:
             pairs = project_segments(source.vertices, source.edges, view.axis, view.direction)
             weight, kind = P.WEIGHT_PROJECT, P.PROJECT
@@ -194,4 +261,4 @@ def extract_view(view, sources) -> P.Drawing:
                              color=info.color)
                 )
 
-    return P.Drawing(segments=dedupe(segments), leaders=leaders)
+    return P.Drawing(segments=dedupe(segments), leaders=leaders, regions=regions)

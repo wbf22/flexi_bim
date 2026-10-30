@@ -54,11 +54,13 @@ def to_svg(
     segments = list(drawing.segments)
     leaders = list(drawing.leaders)
     dimensions = list(drawing.dimensions)
+    regions = list(drawing.regions)
 
     factor = units_per_model / max(float(scale_denominator), 1e-9)
     points = [p for s in segments for p in (s.a, s.b)]
     points += [leader.target for leader in leaders]
     points += [p for d in dimensions for p in (d.a, d.b)]
+    points += [p for region in regions for p in region.points]
     if points:
         xs = [p[0] for p in points]
         ys = [p[1] for p in points]
@@ -86,7 +88,26 @@ def to_svg(
             return _hex(color)
         return stroke_color or _MONO
 
+    defs, region_pattern = _region_patterns(regions, stroke_for)
+
     body = []
+
+    fill_parts = []
+    for region in regions:
+        pid = region_pattern(region)
+        if pid is None:
+            continue
+        pts = [place(p) for p in region.points]
+        if len(pts) < 3:
+            continue
+        path = "M " + " L ".join(f"{_fmt(x)} {_fmt(y)}" for x, y in pts) + " Z"
+        fill_parts.append(
+            f'    <path d="{path}" fill="url(#{pid})" stroke="none" />'
+        )
+    if fill_parts:
+        body.append('  <g id="A-FILL">')
+        body.extend(fill_parts)
+        body.append("  </g>")
 
     layers = {}
     for segment in segments:
@@ -138,8 +159,81 @@ def to_svg(
             f'  <rect width="{_fmt(width)}" height="{_fmt(height)}" '
             f'fill="{escape(background)}" />'
         )
+    if defs:
+        header.append("  <defs>")
+        header.extend(defs)
+        header.append("  </defs>")
 
     return "\n".join(header + body + ["</svg>", ""])
+
+
+def _region_patterns(regions, stroke_for):
+    """Build the ``<pattern>`` defs; return ``(defs, id_lookup)``.
+
+    Patterns are keyed by (fill, colour, spacing, angle) so identical hatches
+    share a single ``<defs>`` entry.
+    """
+    ids = {}
+    defs = []
+    for region in regions:
+        key = _pattern_key(region, stroke_for)
+        if key is None or key in ids:
+            continue
+        pid = f"hatch{len(ids)}"
+        ids[key] = pid
+        defs.extend(_pattern_svg(pid, region, stroke_for(region.color)))
+
+    def lookup(region):
+        key = _pattern_key(region, stroke_for)
+        return None if key is None else ids.get(key)
+
+    return defs, lookup
+
+
+def _pattern_key(region, stroke_for):
+    if region.fill == P.FILL_NONE or str(region.fill).upper() == "NONE":
+        return None
+    return (
+        region.fill,
+        stroke_for(region.color),
+        round(float(region.spacing), 3),
+        round(float(region.angle), 3),
+    )
+
+
+def _pattern_svg(pid, region, color):
+    """One ``<pattern>`` holding the repeating fill content."""
+    size = max(float(region.spacing), 0.2)
+    angle = float(region.angle)
+    transform = f' patternTransform="rotate({_fmt(angle)})"' if angle else ""
+    parts = [
+        f'    <pattern id="{pid}" patternUnits="userSpaceOnUse" '
+        f'width="{_fmt(size)}" height="{_fmt(size)}"{transform}>'
+    ]
+    if region.fill == P.FILL_SOLID:
+        parts.append(
+            f'      <rect width="{_fmt(size)}" height="{_fmt(size)}" fill="{color}" />'
+        )
+    elif region.fill == P.FILL_DOTS:
+        parts.append(
+            f'      <circle cx="{_fmt(size / 2)}" cy="{_fmt(size / 2)}" '
+            f'r="{_fmt(max(0.2, size * 0.1))}" fill="{color}" />'
+        )
+    else:
+        stroke = f'stroke="{color}" stroke-width="{_fmt(P.HATCH_WEIGHT)}"'
+        parts.append(f'      <line x1="0" y1="0" x2="{_fmt(size)}" y2="0" {stroke} />')
+        parts.append(
+            f'      <line x1="0" y1="{_fmt(size)}" x2="{_fmt(size)}" '
+            f'y2="{_fmt(size)}" {stroke} />'
+        )
+        if region.fill == P.FILL_CROSS:
+            parts.append(f'      <line x1="0" y1="0" x2="0" y2="{_fmt(size)}" {stroke} />')
+            parts.append(
+                f'      <line x1="{_fmt(size)}" y1="0" x2="{_fmt(size)}" '
+                f'y2="{_fmt(size)}" {stroke} />'
+            )
+    parts.append("    </pattern>")
+    return parts
 
 
 def _scale_bar_svg(total_mm, labels, x_mm, canvas_h_mm):

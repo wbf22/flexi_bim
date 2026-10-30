@@ -203,6 +203,29 @@ class FlexiBIMTag(PropertyGroup):
         min=0.0,
         max=1.0,
     )
+    fill: EnumProperty(
+        name="Fill",
+        description="Repeating hatch pattern drawn on this tag's cut faces in section views",
+        items=C.FILL_ITEMS,
+        default=C.FILL_NONE,
+        update=_redraw,
+    )
+    fill_spacing: FloatProperty(
+        name="Fill Spacing",
+        description="Size of one hatch tile on paper, in millimetres",
+        default=3.0,
+        min=0.2,
+        soft_max=50.0,
+        update=_redraw,
+    )
+    fill_angle: FloatProperty(
+        name="Fill Angle",
+        description="Rotation of the hatch lines, in degrees",
+        default=45.0,
+        soft_min=0.0,
+        soft_max=360.0,
+        update=_redraw,
+    )
     cost: PointerProperty(type=FlexiBIMCost)
     properties: CollectionProperty(type=FlexiBIMProperty)
     active_property_index: IntProperty(name="Active Property", default=0, min=0)

@@ -154,6 +154,22 @@ PROP_TYPE_ITEMS = [
     (PROP_BOOL, "Yes/No", "Boolean value", 2),
 ]
 
+# Fill patterns (poché) drawn on cut faces in section views ------------------
+# Ids are mirrored by ``drawings.primitives.FILL_*`` and must stay in sync.
+FILL_NONE = "NONE"
+FILL_SOLID = "SOLID"
+FILL_DIAGONAL = "DIAGONAL"
+FILL_CROSS = "CROSS"
+FILL_DOTS = "DOTS"
+
+FILL_ITEMS = [
+    (FILL_NONE, "None", "Leave the cut face unfilled", 0),
+    (FILL_SOLID, "Solid", "Fill the cut face with a flat colour", 1),
+    (FILL_DIAGONAL, "Diagonal", "Single-direction hatch lines", 2),
+    (FILL_CROSS, "Cross Hatch", "Two-direction hatch lines", 3),
+    (FILL_DOTS, "Dots", "Repeated dots (concrete, masonry)", 4),
+]
+
 # Scene-level unit basis for cost rates ------------------------------------
 UNIT_BASIS_ITEMS = [
     ("PROJECT", "Follow Scene", "Use the scene's unit system for quantities and rates", 0),

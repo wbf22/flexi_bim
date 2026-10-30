@@ -211,6 +211,11 @@ class FLEXIBIM_PT_tags(_Sidebar, bpy.types.Panel):
         column.prop(entry, "category")
         column.prop(entry, "description")
         column.prop(entry, "color")
+        column.prop(entry, "fill")
+        if entry.fill != C.FILL_NONE:
+            column.prop(entry, "fill_spacing")
+            if entry.fill in {C.FILL_DIAGONAL, C.FILL_CROSS}:
+                column.prop(entry, "fill_angle")
 
         cost_box = box.box()
         cost_box.label(text="Cost", icon="FUND")

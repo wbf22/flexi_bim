@@ -129,6 +129,9 @@ def _tag_to_dict(tag):
         "category": tag.category,
         "description": tag.description,
         "color": [round(float(c), 4) for c in getattr(tag, "color", ())],
+        "fill": getattr(tag, "fill", C.FILL_NONE),
+        "fill_spacing": round(float(getattr(tag, "fill_spacing", 3.0)), 3),
+        "fill_angle": round(float(getattr(tag, "fill_angle", 45.0)), 3),
         "cost": _cost_to_dict(tag.cost),
         "properties": _properties_to_list(tag.properties),
     }
@@ -204,6 +207,14 @@ def _apply_tag(target, data):
             target.color = tuple(float(c) for c in color)
         except (TypeError, ValueError):
             pass
+    if data.get("fill") in {item[0] for item in C.FILL_ITEMS}:
+        target.fill = data["fill"]
+    for key in ("fill_spacing", "fill_angle"):
+        if key in data:
+            try:
+                setattr(target, key, float(data[key]))
+            except (TypeError, ValueError):
+                pass
     _apply_cost(target.cost, data.get("cost"))
     _apply_properties(target, data.get("properties"))
 
